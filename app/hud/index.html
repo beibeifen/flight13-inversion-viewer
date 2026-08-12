@@ -1,0 +1,1337 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Flight 13 · HUD 载具几何复刻小样</title>
+  <script>
+    // A local file URL cannot fetch the JSON model package.  When the bundled
+    // read-only server is running, transparently move accidental double-clicks
+    // to the supported origin instead of leaving a misleading frozen page.
+    if(location.protocol==='file:'){
+      document.documentElement.style.visibility='hidden';
+      location.replace(`http://127.0.0.1:8765/hud/index.html${location.search}${location.hash}`);
+    }
+    if(new URLSearchParams(location.search).get('embed')==='1'){
+      document.documentElement.classList.add('embed');
+    }
+  </script>
+  <style>
+    :root {
+      color-scheme: light;
+      --page: #eef2f6;
+      --panel: #ffffff;
+      --line: #d5dde6;
+      --ink: #142033;
+      --muted: #64748b;
+      --accent: #2f748f;
+      --accent-soft: #e4f1f5;
+      --dark: #12171d;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: var(--page);
+      color: var(--ink);
+      font-family: "Segoe UI", "Microsoft YaHei", sans-serif;
+    }
+    main { max-width: 1120px; margin: 0 auto; padding: 24px; }
+    header { display: flex; justify-content: space-between; gap: 20px; align-items: end; margin-bottom: 16px; }
+    h1 { margin: 0; font-size: 28px; font-weight: 600; }
+    .subtitle { color: var(--muted); margin-top: 6px; }
+    .guard { color: #8a5d13; background: #fff6dc; border: 1px solid #ecd79f; border-radius: 999px; padding: 7px 11px; white-space: nowrap; }
+    .workspace { display: grid; grid-template-columns: minmax(0,1fr) minmax(0,1fr); gap: 16px; }
+    .embed-only { display: none; }
+    .context { margin-top: 16px; background: var(--panel); border: 1px solid var(--line); border-radius: 18px; padding: 14px 16px; }
+    .context-head { display: flex; justify-content: space-between; gap: 12px; align-items: baseline; margin-bottom: 10px; }
+    .context-head strong { font-weight: 600; }
+    .context-head span { color: var(--muted); font-size: 13px; }
+    .context-grid { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 12px; }
+    .context-frame { margin: 0; display: grid; grid-template-columns: 96px minmax(0,1fr); gap: 10px; align-items: center; min-width: 0; }
+    .context-frame img { width: 96px; height: 96px; display: block; object-fit: cover; background: var(--dark); border-radius: 10px; }
+    .context-frame img.blank { opacity: .18; }
+    .context-frame figcaption { min-width: 0; }
+    .context-frame figcaption strong, .context-frame figcaption span { display: block; }
+    .context-frame figcaption span { color: var(--muted); font-size: 12px; margin-top: 4px; line-height: 1.45; }
+    .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 18px; overflow: hidden; }
+    .panel-head { display: flex; justify-content: space-between; gap: 12px; padding: 14px 16px; border-bottom: 1px solid var(--line); }
+    .panel-head strong { font-weight: 600; }
+    .panel-head span { color: var(--muted); }
+    .panel-tools { display: flex; align-items: center; gap: 9px; color: var(--muted); font-size: 12px; }
+    .panel-tools label { display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; }
+    .panel-tools input[type=range] { width: 78px; }
+    .stage { aspect-ratio: 1; position: relative; overflow: hidden; background: var(--dark); }
+    .hud-square { position: absolute; inset: 0; }
+    #reference { width: 100%; height: 100%; object-fit: cover; display: block; image-rendering: auto; }
+    #reference.blank { opacity: 0; }
+    #overlay-reference { display: none; position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+    .model-stage.overlay #overlay-reference { display: block; }
+    #overlay-reference.blank { opacity: 0; }
+    #render { position: absolute; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; cursor: grab; }
+    #render:active { cursor: grabbing; }
+    #north {
+      position: absolute;
+      left: 31%;
+      top: 39%;
+      color: rgba(230,234,236,.85);
+      font-weight: 500;
+      font-size: clamp(16px,2.2vw,24px);
+      pointer-events: none;
+    }
+    #empty-message {
+      display: none;
+      position: absolute;
+      inset: 0;
+      align-items: center;
+      justify-content: center;
+      color: #aab4bd;
+      letter-spacing: .08em;
+      font-size: 14px;
+    }
+    #empty-message.show { display: flex; }
+    #pose-badge {
+      position: absolute;
+      left: 12px;
+      bottom: 12px;
+      max-width: calc(100% - 24px);
+      padding: 6px 9px;
+      border: 1px solid rgba(213,221,230,.52);
+      border-radius: 9px;
+      background: rgba(18,23,29,.78);
+      color: #dce5ea;
+      font-size: 12px;
+      line-height: 1.35;
+      pointer-events: none;
+    }
+    #pose-badge.low { color: #ffe5a3; border-color: rgba(236,215,159,.62); }
+    .body-axis-label {
+      display: none;
+      position: absolute;
+      z-index: 8;
+      transform: translate(-50%,-50%);
+      padding: 1px 4px;
+      border-radius: 4px;
+      color: #fff;
+      background: rgba(10,15,20,.72);
+      font: 600 11px/1.25 "Segoe UI",sans-serif;
+      pointer-events: none;
+    }
+    #body-axis-x { color: #ff7979; }
+    #body-axis-y { color: #76e39b; }
+    #body-axis-z { color: #72b7ff; }
+    #body-axis-legend {
+      display: none;
+      position: absolute;
+      right: 10px;
+      bottom: 10px;
+      max-width: 55%;
+      padding: 6px 8px;
+      border: 1px solid rgba(213,221,230,.48);
+      border-radius: 7px;
+      color: #dce5ea;
+      background: rgba(18,23,29,.80);
+      font-size: 11px;
+      line-height: 1.4;
+      pointer-events: none;
+    }
+    .axis-stage {
+      position: relative;
+      height: 100%;
+      overflow: hidden;
+      background: var(--dark);
+    }
+    .axis-stage svg { width: 100%; height: 100%; display: block; }
+    .axis-empty {
+      display: none;
+      position: absolute;
+      inset: 0;
+      align-items: center;
+      justify-content: center;
+      color: #aab4bd;
+      font-size: 14px;
+      letter-spacing: .04em;
+      pointer-events: none;
+    }
+    .axis-empty.show { display: flex; }
+    .axis-values {
+      position: absolute;
+      left: 10px;
+      right: 10px;
+      bottom: 8px;
+      color: #dce5ea;
+      font-size: 14px;
+      line-height: 1.4;
+      text-align: center;
+      font-variant-numeric: tabular-nums;
+      pointer-events: none;
+    }
+    .axis-status { color: var(--muted); font-size: 12px; white-space: nowrap; }
+    .controls { margin-top: 16px; background: var(--panel); border: 1px solid var(--line); border-radius: 18px; padding: 16px; }
+    .anchor-bar { display: grid; grid-template-columns: minmax(180px,1fr) auto minmax(230px,auto) auto; gap: 10px; align-items: center; margin-bottom: 14px; padding-bottom: 14px; border-bottom: 1px solid var(--line); }
+    .anchor-title strong, .anchor-title span { display: block; }
+    .anchor-title span { color: var(--muted); font-size: 12px; margin-top: 3px; }
+    .anchor-bar select { min-width: 230px; padding: 7px 9px; border: 1px solid var(--line); border-radius: 9px; background: #fff; color: var(--ink); font: inherit; }
+    .anchor-metrics { display: grid; grid-template-columns: repeat(4,minmax(0,1fr)); gap: 8px; margin-bottom: 14px; }
+    .anchor-metric { padding: 8px 10px; border: 1px solid var(--line); border-radius: 9px; background: #fbfcfd; }
+    .anchor-metric span { display: block; color: var(--muted); font-size: 11px; }
+    .anchor-metric b { display: block; margin-top: 3px; font-variant-numeric: tabular-nums; }
+    .time-row { display: grid; grid-template-columns: 92px 1fr 110px; gap: 12px; align-items: center; }
+    .time-value { font-variant-numeric: tabular-nums; font-weight: 600; }
+    .calibration-row { display: grid; grid-template-columns: 118px 1fr 54px 62px; gap: 10px; align-items: center; margin-top: 10px; }
+    .calibration-row label { color: var(--muted); font-size: 13px; }
+    .calibration-row output { font-variant-numeric: tabular-nums; text-align: right; }
+    .calibration-row button { padding: 6px 9px; }
+    input[type=range] { width: 100%; accent-color: var(--accent); }
+    input[type=number] { width: 100%; padding: 8px 9px; border: 1px solid var(--line); border-radius: 9px; font: inherit; }
+    .phase-line { display: grid; grid-template-columns: 143fr 1fr 47fr 232fr 3500fr; height: 10px; margin: 12px 0 5px; border-radius: 5px; overflow: hidden; background: #dfe5eb; }
+    .phase-line span:nth-child(1) { background: #3b7f94; }
+    .phase-line span:nth-child(2) { background: #e69f38; min-width: 3px; }
+    .phase-line span:nth-child(3) { background: #8f6a27; }
+    .phase-line span:nth-child(4) { background: #cbd2da; }
+    .phase-line span:nth-child(5) { background: #8b65b5; }
+    .phase-labels { display: flex; justify-content: space-between; color: var(--muted); font-size: 12px; }
+    .presets { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 14px; }
+    button { border: 1px solid var(--line); border-radius: 9px; padding: 8px 11px; background: #f7f9fb; color: var(--ink); font: inherit; cursor: pointer; }
+    button:hover { border-color: #9db0c1; }
+    button.active { background: var(--accent); border-color: var(--accent); color: white; }
+    .readout { display: grid; grid-template-columns: repeat(5,minmax(0,1fr)); gap: 10px; margin-top: 14px; }
+    .metric { padding: 10px 12px; background: #f7f9fb; border-radius: 10px; min-width: 0; }
+    .metric span { display: block; color: var(--muted); font-size: 12px; margin-bottom: 4px; }
+    .metric b { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .footer-note { color: var(--muted); margin: 14px 2px 0; line-height: 1.6; }
+    .error { color: #b42318; }
+    @media (max-width: 760px) {
+      main { padding: 12px; }
+      header { align-items: start; flex-direction: column; }
+      .workspace { grid-template-columns: 1fr; }
+      .context-grid { grid-template-columns: 1fr; }
+      .time-row { grid-template-columns: 76px 1fr; }
+      .time-row input[type=number] { grid-column: 1 / -1; }
+      .calibration-row { grid-template-columns: 105px 1fr 48px; }
+      .calibration-row button { grid-column: 1 / -1; }
+      .anchor-bar { grid-template-columns: 1fr auto auto; }
+      .anchor-title { grid-column: 1 / -1; }
+      .anchor-bar select { min-width: 0; width: 100%; }
+      .anchor-metrics { grid-template-columns: 1fr 1fr; }
+      .readout { grid-template-columns: 1fr 1fr; }
+    }
+    html.embed, html.embed body { background: transparent; overflow: hidden; }
+    html.embed main { max-width: none; padding: 0; }
+    html.embed header, html.embed .context, html.embed .controls { display: none; }
+    html.embed .workspace { grid-template-columns: repeat(3,minmax(0,1fr)); gap: 10px; }
+    html.embed .embed-only { display: block; }
+    html.embed .reference-panel { display: none; }
+    html.embed .panel { border-radius: 10px; box-shadow: none; }
+    html.embed .panel-head { min-height: 40px; padding: 8px 10px; align-items: center; }
+    html.embed .model-panel .panel-tools { display: none; }
+    html.embed .stage { aspect-ratio: auto; height: clamp(220px,16vw,270px); }
+    html.embed .hud-square {
+      inset: 0 auto 0 50%;
+      width: auto;
+      height: 100%;
+      aspect-ratio: 1;
+      transform: translateX(-50%);
+    }
+    html.embed #pose-badge,
+    html.embed #body-axis-legend,
+    html.embed .body-axis-label,
+    html.embed .axis-status,
+    html.embed #pose-badge { display: none !important; }
+    @media (max-width: 680px) {
+      html.embed, html.embed body { overflow: visible; }
+      html.embed .workspace { grid-template-columns: 1fr; }
+      html.embed .stage { height: 240px; }
+    }
+  </style>
+</head>
+<body>
+<main>
+  <header>
+    <div>
+      <h1>HUD 载具几何复刻小样</h1>
+      <div class="subtitle">左侧为原视频裁剪，右侧为同一 Blender 源模型的减面复刻</div>
+    </div>
+    <div class="guard">逐时 HUD 线索 · 非物理姿态</div>
+  </header>
+
+  <section class="workspace">
+    <article class="panel reference-panel">
+      <div class="panel-head"><strong>原视频 HUD</strong><span id="reference-label">PTS 100.0</span></div>
+      <div class="stage"><img id="reference" alt="原视频姿态球裁剪"></div>
+    </article>
+    <article class="panel model-panel">
+      <div class="panel-head">
+        <strong id="model-panel-title">源模型简化复刻</strong>
+        <div class="panel-tools">
+          <label><input id="overlay-toggle" type="checkbox">重叠抽样</label>
+          <label>模型层 <input id="overlay-opacity" type="range" min="20" max="90" step="5" value="62" aria-label="重叠抽样模型透明度"></label>
+        </div>
+      </div>
+      <div class="stage model-stage" id="model-stage">
+        <div class="hud-square">
+          <img id="overlay-reference" alt="重叠抽样的原视频 HUD">
+          <canvas id="render" aria-label="源模型简化后的三维载具"></canvas>
+          <span id="north">N</span>
+          <span id="body-axis-x" class="body-axis-label">X<sub>B</sub></span>
+          <span id="body-axis-y" class="body-axis-label">Y<sub>B</sub></span>
+          <span id="body-axis-z" class="body-axis-label">Z<sub>B</sub></span>
+          <div id="body-axis-legend">模型体轴：<span style="color:#ff7979">X<sub>B</sub> 鼻向</span> · <span style="color:#76e39b">Y<sub>B</sub> 横向约定</span> · <span style="color:#72b7ff">Z<sub>B</sub> 热盾向</span><br>仅 HUD 显示候选，未配准 ECEF / ENU</div>
+          <div id="pose-badge">等待逐时投影线索</div>
+          <div id="empty-message">NO ATTITUDE WIDGET</div>
+        </div>
+      </div>
+    </article>
+    <article class="panel embed-only">
+      <div class="panel-head"><strong>区间平均速度（地固 ENU）</strong><span id="velocity-axis-status" class="axis-status">无有效定位点区间</span></div>
+      <div class="stage">
+        <div class="axis-stage">
+          <svg id="velocity-axis-svg" viewBox="0 0 360 240" role="img" aria-label="定位点区间平均速度（地固 ENU）"></svg>
+          <div id="velocity-axis-empty" class="axis-empty show">无有效 raw-fix 区间</div>
+          <div id="velocity-axis-values" class="axis-values"></div>
+        </div>
+      </div>
+    </article>
+    <article class="panel embed-only">
+      <div class="panel-head"><strong>弹体坐标系</strong><span id="body-axis-status" class="axis-status">无 HUD 姿态</span></div>
+      <div class="stage">
+        <div class="axis-stage">
+          <svg id="body-axis-svg" viewBox="0 0 360 240" role="img" aria-label="HUD 显示候选的右手弹体坐标系"></svg>
+          <div id="body-axis-empty" class="axis-empty show">无 HUD 姿态</div>
+        </div>
+      </div>
+    </article>
+  </section>
+
+  <section class="context" aria-labelledby="context-title">
+    <div class="context-head"><strong id="context-title">前后帧连续性对照</strong><span>同一主时间前后各 5 秒 · 原视频 HUD</span></div>
+    <div class="context-grid">
+      <figure class="context-frame" data-context-offset="-5">
+        <img alt="当前时刻前 5 秒的原视频 HUD">
+        <figcaption><strong>前 5 秒</strong><span>等待载入</span></figcaption>
+      </figure>
+      <figure class="context-frame" data-context-offset="0">
+        <img alt="当前时刻的原视频 HUD">
+        <figcaption><strong>当前</strong><span>等待载入</span></figcaption>
+      </figure>
+      <figure class="context-frame" data-context-offset="5">
+        <img alt="当前时刻后 5 秒的原视频 HUD">
+        <figcaption><strong>后 5 秒</strong><span>等待载入</span></figcaption>
+      </figure>
+    </div>
+  </section>
+
+  <section class="controls">
+    <div class="anchor-bar">
+      <div class="anchor-title"><strong>重叠抽样锚点</strong><span>优先核对投影长度、屏幕方向和黑白分界</span></div>
+      <button id="anchor-prev" type="button">上个锚点</button>
+      <select id="anchor-select" aria-label="选择重叠抽样锚点"></select>
+      <button id="anchor-next" type="button">下个锚点</button>
+    </div>
+    <div class="anchor-metrics" aria-label="当前抽样锚点指标">
+      <div class="anchor-metric"><span>自动亮区长度（非整船）</span><b id="anchor-length">—</b></div>
+      <div class="anchor-metric"><span>长轴方向（无向）</span><b id="anchor-axis">—</b></div>
+      <div class="anchor-metric"><span>模型 roll 候选（非物理）</span><b id="anchor-roll">—</b></div>
+      <div class="anchor-metric"><span>纵向 tilt / 候选状态</span><b id="anchor-state">—</b></div>
+    </div>
+    <div class="time-row">
+      <div class="time-value" id="time-value">T+ 93.0</div>
+      <input id="time" type="range" min="0" max="3923" step="0.1" value="93" aria-label="任务时间">
+      <input id="time-input" type="number" min="0" max="3923" step="0.1" value="93" aria-label="输入任务时间秒">
+    </div>
+    <div class="calibration-row">
+      <label for="roll-trim">局部候选分支（±10 s）</label>
+      <input id="roll-trim" type="range" min="-180" max="180" step="1" value="0" aria-label="热盾黑白分界滚转微调角度">
+      <output id="roll-trim-value" for="roll-trim">0°</output>
+      <button id="roll-reset" type="button">归零</button>
+    </div>
+    <div class="phase-line" aria-label="载具身份阶段">
+      <span></span><span></span><span></span><span></span><span></span>
+    </div>
+    <div class="phase-labels"><span>整箭</span><span>分离 / Booster / 空窗</span><span>Ship</span></div>
+    <div class="presets" id="presets"></div>
+    <div class="readout">
+      <div class="metric"><span>视频时间</span><b id="pts-value">PTS 100.0 s</b></div>
+      <div class="metric"><span>HUD 对象</span><b id="identity">Integrated stack</b></div>
+      <div class="metric"><span>模型</span><b id="model-name">飞船 + 助推器</b></div>
+      <div class="metric"><span>状态</span><b id="status">几何对照</b></div>
+      <div class="metric"><span>逐时线索</span><b id="cue-status">等待载入</b></div>
+    </div>
+    <div class="footer-note" id="note">阶段切换使用任务身份合同；公开版不附带广播帧。窗口外不会延续上一帧模型；姿态仅为显示候选。</div>
+  </section>
+</main>
+
+<script type="module">
+  import * as THREE from '../vendor/three/three.module.js';
+
+  const assetRoot = './assets/';
+  const presets = [
+    // rotation = [out-of-screen tilt, roll about vehicle axis, screen angle].
+    // The hierarchy below keeps broadcast screen angle independent of roll.
+    { id:'stack', label:'整箭 · PTS 100', tplus:93, pts:100, state:'stack', ref:null, rotation:[8,-24,-45], scale:.54 },
+    { id:'separation', label:'分离 · PTS 150', tplus:143, pts:150, state:'separation', ref:null, rotation:[6,-18,-56], scale:.54 },
+    { id:'booster', label:'助推器 · PTS 160', tplus:153, pts:160, state:'booster', ref:null, rotation:[4,68,-90], scale:.77 },
+    { id:'empty', label:'无姿态球 · PTS 300', tplus:293, pts:300, state:'empty', ref:null, rotation:[0,0,0], scale:1 },
+    { id:'ship600', label:'Ship · PTS 600', tplus:593, pts:600, state:'ship', ref:null, rotation:[12,-24,-43], scale:1.06 },
+    { id:'ship800', label:'Ship 近轴 · PTS 800', tplus:793, pts:800, state:'ship', ref:null, rotation:[114,0,0], scale:1.06 },
+    { id:'ship2200', label:'Ship 暗面 · PTS 2200', tplus:2193, pts:2200, state:'ship', ref:null, rotation:[120,-270,0], scale:1.06 },
+    { id:'ship2400', label:'Ship 近轴 · PTS 2400', tplus:2393, pts:2400, state:'ship', ref:null, rotation:[125,-381,-127], scale:1.06 },
+    { id:'ship3778', label:'Ship 近端 · PTS 3778', tplus:3771, pts:3778, state:'ship', ref:null, rotation:[116,-506,-143], scale:1.06 },
+    { id:'ship3800', label:'Ship 端视 · PTS 3800', tplus:3793, pts:3800, state:'ship', ref:null, rotation:[105,-360,-192], scale:1.06 },
+    { id:'ship3870', label:'Ship 展开 · PTS 3870', tplus:3863, pts:3870, state:'ship', ref:null, rotation:[135,-360,-130], scale:1.06 },
+    { id:'ship3900', label:'Ship 侧视 · PTS 3900', tplus:3893, pts:3900, state:'ship', ref:null, rotation:[173,-360,-90], scale:1.06 }
+  ];
+  const auditAnchors = [
+    {pts:650,label:'PTS 650 · 纵向翻转前'},
+    {pts:700,label:'PTS 700 · 用户指出的翻转段'},
+    {pts:740,label:'PTS 740 · 近端视接近'},
+    {pts:761,label:'PTS 761 · 端视奇点 · roll 不可观'},
+    {pts:772,label:'PTS 772 · 端视后桥接 · roll 不可观'},
+    {pts:780,label:'PTS 780 · 鼻尾分支重新出现'},
+    {pts:800,label:'PTS 800 · 端视后分支'},
+    {pts:850,label:'PTS 850 · 近纵向起点'},
+    {pts:900,label:'PTS 900 · roll 锚点'},
+    {pts:975,label:'PTS 975 · 长度折点'},
+    {pts:1135,label:'PTS 1135 · 方向折点'},
+    {pts:1325,label:'PTS 1325 · 纵向稳定段'},
+    {pts:1458,label:'PTS 1458 · 用户回归帧'},
+    {pts:1700,label:'PTS 1700 · 稳定 roll 末端'},
+    {pts:1750,label:'PTS 1750 · 材质转换起点'},
+    {pts:1800,label:'PTS 1800 · 金属面朝向'},
+    {pts:1850,label:'PTS 1850 · 转换中段'},
+    {pts:1900,label:'PTS 1900 · 背景污染起点 · 仅人工轮廓'},
+    {pts:1925,label:'PTS 1925 · 方向折点 · 长度污染'},
+    {pts:1950,label:'PTS 1950 · 黑面候选 · 长度污染'},
+    {pts:2000,label:'PTS 2000 · 仅方向桥接 · 长度/roll 不可用'}
+  ];
+  const query = new URLSearchParams(location.search);
+  const embedMode = query.get('embed') === '1';
+  const requestedPreset = query.get('preset');
+  const initialPreset = presets.find(item=>item.id===requestedPreset) || presets[0];
+  const requestedTime = Number(query.get('t'));
+  const initialTime = Number.isFinite(requestedTime) ? Math.max(0,Math.min(3923,requestedTime)) : initialPreset.tplus;
+
+  const canvas = document.getElementById('render');
+  const renderer = new THREE.WebGLRenderer({canvas, antialias:true, alpha:true});
+  // The broadcast widget is a 191×191 raster.  Rendering at that native
+  // resolution keeps the comparison honest instead of showing a falsely
+  // pristine high-resolution model beside an up-scaled video crop.
+  renderer.setPixelRatio(1);
+  renderer.outputColorSpace = THREE.SRGBColorSpace;
+  renderer.setClearColor(0x151a1f, 1);
+  let renderFramePending=false;
+  function requestRender(){
+    if(document.hidden||renderFramePending) return;
+    renderFramePending=true;
+    requestAnimationFrame(()=>{
+      renderFramePending=false;
+      resize();
+      renderer.render(scene,camera);
+      updateBodyAxisLabels();
+    });
+  }
+
+  const scene = new THREE.Scene();
+  // The broadcast gauge has a small but stable perspective offset: the
+  // reference disk centre sits about 1.4 px below the spherical limb centre.
+  // z/r=18.1 and this narrow FOV reproduce that offset while keeping the
+  // vehicle scale within about one percent of the former orthographic view.
+  const camera = new THREE.PerspectiveCamera(8.95, 1, .1, 200);
+  camera.position.set(0, 0, 80.73);
+  camera.lookAt(0, 0, 0);
+  scene.add(new THREE.HemisphereLight(0xf3f5f6, 0x4b545b, 2.0));
+  scene.add(new THREE.AmbientLight(0xffffff, .72));
+  const key = new THREE.DirectionalLight(0xffffff, 2.8);
+  key.position.set(-5, 7, 10);
+  scene.add(key);
+  const fill = new THREE.DirectionalLight(0x8796a0, 1.1);
+  fill.position.set(7, -4, 5);
+  scene.add(fill);
+
+  const materials = [
+    new THREE.MeshStandardMaterial({color:0xd8dbdc, emissive:0x606264, emissiveIntensity:.42, roughness:.68, metalness:.08, side:THREE.DoubleSide}),
+    new THREE.MeshStandardMaterial({color:0x3a3d40, roughness:.90, metalness:.01, side:THREE.DoubleSide}),
+    new THREE.MeshStandardMaterial({color:0x333638, roughness:.94, metalness:.02, side:THREE.DoubleSide})
+  ];
+  const vehicle = new THREE.Group();
+  scene.add(vehicle);
+  const screenPose = new THREE.Group();
+  const tiltPose = new THREE.Group();
+  const rollPose = new THREE.Group();
+  vehicle.add(screenPose);
+  vehicle.position.y=-.95;
+  screenPose.add(tiltPose);
+  tiltPose.add(rollPose);
+  const bodyAxes = new THREE.Group();
+  const bodyAxisLength = 1.55;
+  bodyAxes.add(
+    new THREE.ArrowHelper(new THREE.Vector3(0,1,0),new THREE.Vector3(0,0,0),bodyAxisLength,0xff5f5f,.34,.20),
+    new THREE.ArrowHelper(new THREE.Vector3(0,0,-1),new THREE.Vector3(0,0,0),bodyAxisLength,0x48cf79,.34,.20),
+    new THREE.ArrowHelper(new THREE.Vector3(-1,0,0),new THREE.Vector3(0,0,0),bodyAxisLength,0x4f9fff,.34,.20)
+  );
+  rollPose.add(bodyAxes);
+  let shipMesh = null;
+  let boosterMesh = null;
+  let modelData = null;
+  let cueData = null;
+  let modelLoadError = null;
+  let cueLoadError = null;
+  let activePreset = presets[0];
+  let separationProgress = .73;
+  let rollTrimDeg = Number(query.get('roll')) || 0;
+  let rollTrimAnchorPts = rollTrimDeg ? initialTime+7 : null;
+  let overlayMode = query.get('overlay') === '1';
+  let overlayOpacity = Math.max(.2,Math.min(.9,(Number(query.get('overlayOpacity'))||62)/100));
+  let currentVelocity = null;
+
+  if(embedMode) document.getElementById('model-panel-title').textContent='简化复刻';
+
+  // Renderer-relative anchors from held HUD crops.  These are deliberately
+  // phase-specific: the broadcast changes vehicle identity and display scale.
+  // Interpolation is a visual continuity aid, never physical pitch/roll.
+  const visualPoseAnchors = {
+    stack:[
+      {pts:0,tilt:8,roll:66},{pts:35,tilt:8,roll:66},
+      {pts:50,tilt:8,roll:-24},{pts:115,tilt:8,roll:-24},
+      {pts:130,tilt:8,roll:66},{pts:149.2,tilt:8,roll:66}
+    ],
+    separation:[{pts:149.2,tilt:6,roll:72},{pts:150.3,tilt:6,roll:72}],
+    booster:[{pts:150.3,tilt:5,roll:68},{pts:198,tilt:5,roll:68}],
+    ship:[
+      {pts:430,tilt:12,roll:-24},{pts:600,tilt:12,roll:-24},
+      {pts:650,tilt:24,roll:-18},{pts:680,tilt:36,roll:-14},
+      {pts:700,tilt:48,roll:-12},{pts:720,tilt:54,roll:-10},
+      {pts:740,tilt:66,roll:-7},{pts:750,tilt:78,roll:-6},
+      {pts:760,tilt:88,roll:-5},{pts:761,tilt:90,roll:-5},
+      {pts:772,tilt:104,roll:-4},{pts:780,tilt:105,roll:-2},
+      {pts:800,tilt:114,roll:0},{pts:820,tilt:118,roll:0},
+      {pts:850,tilt:123,roll:0},{pts:1000,tilt:120,roll:0},
+      {pts:1100,tilt:120,roll:0},{pts:1400,tilt:120,roll:0},
+      {pts:1600,tilt:120,roll:0},{pts:1700,tilt:120,roll:0},
+      {pts:1800,tilt:125,roll:-90},{pts:1900,tilt:130,roll:-270},
+      {pts:1950,tilt:125,roll:-270},{pts:2000,tilt:125,roll:-270},
+      {pts:2200,tilt:120,roll:-270},{pts:2300,tilt:123,roll:-350},
+      {pts:2400,tilt:125,roll:-381},
+      {pts:2600,tilt:151,roll:-386},{pts:2940,tilt:175,roll:-399},
+      {pts:2960,tilt:175,roll:-399},{pts:3200,tilt:175,roll:-430},
+      {pts:3700,tilt:173,roll:-498},
+      {pts:3740,tilt:128,roll:-501},{pts:3770,tilt:122,roll:-505},
+      {pts:3778,tilt:116,roll:-506},{pts:3789,tilt:108,roll:-507.5},
+      {pts:3800,tilt:105,roll:-360},{pts:3820,tilt:106,roll:-360},
+      {pts:3865,tilt:107,roll:-360},{pts:3870,tilt:135,roll:-360},
+      {pts:3875,tilt:162,roll:-360},{pts:3880,tilt:173,roll:-360},
+      {pts:3900,tilt:173,roll:-360},{pts:3912,tilt:173,roll:-360},
+      {pts:3913,tilt:173,roll:-252},{pts:3914,tilt:173,roll:-282},
+      {pts:3915,tilt:173,roll:-297},{pts:3930,tilt:173,roll:-297}
+    ]
+  };
+
+  function gaugeLine(points, opacity=.38, loop=false, depthTest=true) {
+    const geometry = new THREE.BufferGeometry().setFromPoints(points);
+    const material = new THREE.LineBasicMaterial({
+      color:0xaeb7be,
+      transparent:true,
+      opacity,
+      depthTest,
+      depthWrite:false
+    });
+    const line = loop ? new THREE.LineLoop(geometry, material) : new THREE.Line(geometry, material);
+    line.renderOrder = -2;
+    return line;
+  }
+  function circlePoints(radius, transform, count=128) {
+    const points=[];
+    for(let i=0;i<count;i++){
+      const a=2*Math.PI*i/count;
+      points.push(transform(radius*Math.cos(a), radius*Math.sin(a), a));
+    }
+    return points;
+  }
+  function gaugeArcPoints(start,end,count=65,radius=4.46){
+    const points=[];
+    for(let i=0;i<count;i++){
+      const a=start+(end-start)*i/(count-1);
+      points.push(new THREE.Vector3(radius*Math.cos(a),radius*Math.sin(a),0));
+    }
+    return points;
+  }
+  function gaugeRay(angle,radius=4.46){
+    return [
+      new THREE.Vector3(0,0,0),
+      new THREE.Vector3(radius*Math.cos(angle),radius*Math.sin(angle),0)
+    ];
+  }
+  const grid = new THREE.Group();
+  const gaugeRadius=4.46;
+  const outerGaugeCircle=gaugeLine(
+    circlePoints(gaugeRadius,(x,y)=>new THREE.Vector3(x,y,.25)),
+    .52,
+    true,
+    false
+  );
+  outerGaugeCircle.renderOrder=4;
+
+  // One real 3-D reference disk, not a pair of flat ellipses.  The far/top
+  // half is dimmer and the near/bottom half is brighter; the opaque vehicle
+  // remains in front of the disk lines, as it does in the broadcast widget.
+  const referenceDisk=new THREE.Group();
+  referenceDisk.rotation.x=THREE.MathUtils.degToRad(-66.06);
+  const farReferenceArc=gaugeLine(gaugeArcPoints(0,Math.PI),.33);
+  const nearReferenceArc=gaugeLine(gaugeArcPoints(Math.PI,2*Math.PI),.42);
+  const referenceSpokes=new THREE.Group();
+  const northPlaneAngle=THREE.MathUtils.degToRad(116.5);
+  [northPlaneAngle,northPlaneAngle+Math.PI/2,northPlaneAngle+Math.PI,northPlaneAngle+3*Math.PI/2]
+    .forEach(angle=>{
+      const far=Math.sin(angle)>0;
+      referenceSpokes.add(gaugeLine(gaugeRay(angle),far ? .18 : .25));
+    });
+  referenceDisk.add(farReferenceArc,nearReferenceArc,referenceSpokes);
+  grid.add(outerGaugeCircle,referenceDisk);
+  grid.position.y=-.92;
+  scene.add(grid);
+
+  function meshFrom(model) {
+    const geometry = new THREE.BufferGeometry();
+    const positions=new Float32Array(model.vertices.length*3);
+    model.vertices.forEach((vertex,index)=>positions.set(vertex,index*3));
+    geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    const buckets=[[],[],[]];
+    model.faces.forEach((face,index)=>buckets[model.materials[index]].push(...face));
+    const combined=new Uint32Array(buckets.reduce((total,bucket)=>total+bucket.length,0));
+    let cursor=0;
+    buckets.forEach((bucket,materialIndex)=>{
+      combined.set(bucket,cursor);
+      geometry.addGroup(cursor,bucket.length,materialIndex);
+      cursor+=bucket.length;
+    });
+    geometry.setIndex(new THREE.BufferAttribute(combined,1));
+    geometry.computeVertexNormals();
+    const mesh=new THREE.Mesh(geometry,materials);
+    mesh.castShadow=false;
+    mesh.receiveShadow=false;
+    return mesh;
+  }
+
+  function degrees(values){ return values.map(value=>THREE.MathUtils.degToRad(value)); }
+  const SVG_NS='http://www.w3.org/2000/svg';
+  const axisColors=['#ff7979','#76e39b','#72b7ff'];
+  const finiteNumber=value=>typeof value==='number'&&Number.isFinite(value);
+  const vectorNorm=vector=>Math.hypot(...vector);
+  const normalizeVector=vector=>{
+    const length=vectorNorm(vector);
+    return length>1e-9?vector.map(value=>value/length):null;
+  };
+  function svgElement(name,attributes={},text=''){
+    const node=document.createElementNS(SVG_NS,name);
+    Object.entries(attributes).forEach(([key,value])=>node.setAttribute(key,String(value)));
+    if(text) node.textContent=text;
+    return node;
+  }
+
+  function clearAxisPanel(svgId,emptyId,statusId,message){
+    if(!embedMode) return;
+    document.getElementById(svgId).replaceChildren();
+    const empty=document.getElementById(emptyId);
+    empty.textContent=message;
+    empty.classList.add('show');
+    document.getElementById(statusId).textContent=message;
+  }
+
+  function appendProjectedArrow(svg,origin,projection,color,label,options={}){
+    let {dx,dy,depth}=projection;
+    const magnitude=Math.hypot(dx,dy);
+    const opacity=options.opacity??(depth>=0?1:.58);
+    if(magnitude<.065){
+      const group=svgElement('g',{opacity});
+      group.append(svgElement('circle',{cx:origin.x,cy:origin.y,r:10,fill:'none',stroke:color,'stroke-width':3}));
+      if(depth>=0){
+        group.append(svgElement('circle',{cx:origin.x,cy:origin.y,r:3.2,fill:color}));
+      }else{
+        group.append(svgElement('line',{x1:origin.x-5,y1:origin.y-5,x2:origin.x+5,y2:origin.y+5,stroke:color,'stroke-width':2.5}));
+        group.append(svgElement('line',{x1:origin.x+5,y1:origin.y-5,x2:origin.x-5,y2:origin.y+5,stroke:color,'stroke-width':2.5}));
+      }
+      group.append(svgElement('text',{x:origin.x+14,y:origin.y-10,fill:color,'font-size':15,'font-weight':600},label));
+      svg.append(group);
+      return;
+    }
+    dx/=magnitude;dy/=magnitude;
+    const length=options.length??68;
+    const strokeWidth=options.strokeWidth??4;
+    const labelOffset=options.labelOffset??12;
+    const end={x:origin.x+dx*length,y:origin.y+dy*length};
+    const normal={x:-dy,y:dx};
+    const group=svgElement('g',{opacity});
+    group.append(svgElement('line',{x1:origin.x,y1:origin.y,x2:end.x,y2:end.y,stroke:color,'stroke-width':strokeWidth,'stroke-linecap':'round'}));
+    group.append(svgElement('polygon',{
+      points:`${end.x},${end.y} ${end.x-dx*13+normal.x*6},${end.y-dy*13+normal.y*6} ${end.x-dx*13-normal.x*6},${end.y-dy*13-normal.y*6}`,
+      fill:color
+    }));
+    group.append(svgElement('text',{x:end.x+dx*labelOffset,y:end.y+dy*labelOffset+5,fill:color,'font-size':15,'font-weight':600,'text-anchor':'middle'},label));
+    svg.append(group);
+  }
+
+  function drawProjectedTriad(svgId,axes,labels){
+    const svg=document.getElementById(svgId);
+    svg.replaceChildren();
+    svg.append(svgElement('circle',{cx:180,cy:108,r:4,fill:'#dce5ea'}));
+    axes.map((projection,index)=>({...projection,index}))
+      .sort((a,b)=>a.depth-b.depth)
+      .forEach(projection=>appendProjectedArrow(svg,{x:180,y:108},projection,axisColors[projection.index],labels[projection.index]));
+  }
+
+  // Fixed orthographic oblique view of local ENU. It is a diagram, not the HUD camera.
+  function projectEnu(vector){
+    return {
+      dx:.70710678*(vector[0]-vector[1]),
+      dy:.40824829*(vector[0]+vector[1])-.81649658*vector[2],
+      depth:.57735027*(vector[0]+vector[1]+vector[2])
+    };
+  }
+
+  function drawEnuVelocity(enu){
+    const svg=document.getElementById('velocity-axis-svg');
+    const origin={x:180,y:88};
+    const fixedAxes=[[1,0,0],[0,1,0],[0,0,1]];
+    svg.replaceChildren();
+    fixedAxes.map((axis,index)=>({...projectEnu(axis),index}))
+      .sort((a,b)=>a.depth-b.depth)
+      .forEach(projection=>appendProjectedArrow(
+        svg,origin,projection,axisColors[projection.index],['E','N','U'][projection.index],
+        {length:44,strokeWidth:2.5,opacity:.72,labelOffset:9}
+      ));
+    appendProjectedArrow(svg,origin,projectEnu(normalizeVector(enu)),'#ffd166','V',{
+      length:78,strokeWidth:5,opacity:1,labelOffset:11
+    });
+    svg.append(svgElement('circle',{cx:origin.x,cy:origin.y,r:4,fill:'#f4f7f9'}));
+  }
+
+  function normalizeVelocityPayload(payload){
+    if(!payload||payload.valid!==true) return null;
+    const enu=payload.enu||{};
+    const ecef=payload.ecef||{};
+    const values=[enu.east_mps,enu.north_mps,enu.up_mps,ecef.x_mps,ecef.y_mps,ecef.z_mps];
+    if(!values.every(finiteNumber)) return null;
+    return {
+      semantics:String(payload.semantics||'raw_interval_mean'),
+      enu:[enu.east_mps,enu.north_mps,enu.up_mps],
+      ecef:[ecef.x_mps,ecef.y_mps,ecef.z_mps]
+    };
+  }
+
+  function renderVelocityAxis(velocity){
+    if(!embedMode) return;
+    const values=document.getElementById('velocity-axis-values');
+    values.textContent='';
+    if(!velocity){
+      clearAxisPanel('velocity-axis-svg','velocity-axis-empty','velocity-axis-status','无有效 raw-fix 区间');
+      return;
+    }
+    const speed=vectorNorm(velocity.enu);
+    if(speed<.5){
+      clearAxisPanel('velocity-axis-svg','velocity-axis-empty','velocity-axis-status','速度过低');
+      return;
+    }
+    const horizontal=Math.hypot(velocity.enu[0],velocity.enu[1]);
+    const flightPathDeg=Math.atan2(velocity.enu[2],horizontal)*180/Math.PI;
+    drawEnuVelocity(velocity.enu);
+    document.getElementById('velocity-axis-empty').classList.remove('show');
+    const semantics={raw_interval_mean:'端点差分 · 区间平均'}[velocity.semantics]||velocity.semantics;
+    document.getElementById('velocity-axis-status').textContent=semantics;
+    const signed=value=>`${value>=0?'+':''}${value.toFixed(1)}`;
+    values.innerHTML=`|V| ${(speed*3.6).toFixed(1)} km/h · 水平 ${(horizontal*3.6).toFixed(1)} km/h · γ ${signed(flightPathDeg)}°<br>ENU&nbsp; E ${signed(velocity.enu[0])} · N ${signed(velocity.enu[1])} · U ${signed(velocity.enu[2])} m/s<br>ECEF&nbsp; X ${signed(velocity.ecef[0])} · Y ${signed(velocity.ecef[1])} · Z ${signed(velocity.ecef[2])} m/s`;
+  }
+
+  function renderBodyAxis(valid,message='无 HUD 姿态'){
+    if(!embedMode) return;
+    if(!valid){
+      clearAxisPanel('body-axis-svg','body-axis-empty','body-axis-status',message);
+      return;
+    }
+    scene.updateMatrixWorld(true);
+    camera.updateMatrixWorld(true);
+    const originWorld=rollPose.localToWorld(new THREE.Vector3(0,0,0));
+    const originNdc=originWorld.clone().project(camera);
+    const localAxes=[
+      new THREE.Vector3(0,bodyAxisLength,0),
+      new THREE.Vector3(0,0,-bodyAxisLength),
+      new THREE.Vector3(-bodyAxisLength,0,0)
+    ];
+    const axes=localAxes.map(local=>{
+      const endWorld=rollPose.localToWorld(local.clone());
+      const endNdc=endWorld.clone().project(camera);
+      const originCamera=originWorld.clone().applyMatrix4(camera.matrixWorldInverse);
+      const endCamera=endWorld.clone().applyMatrix4(camera.matrixWorldInverse);
+      return {dx:endNdc.x-originNdc.x,dy:-(endNdc.y-originNdc.y),depth:originCamera.z-endCamera.z};
+    });
+    drawProjectedTriad('body-axis-svg',axes,['Xᴮ','Yᴮ','Zᴮ']);
+    document.getElementById('body-axis-empty').classList.remove('show');
+    document.getElementById('body-axis-status').textContent='HUD 候选·未配准';
+  }
+  function setOpacity(value){
+    materials.forEach(material=>{
+      const transparent=value<.999;
+      const depthWrite=!transparent;
+      const pipelineChanged=material.transparent!==transparent||material.depthWrite!==depthWrite;
+      material.transparent=transparent;
+      material.opacity=value;
+      material.depthWrite=depthWrite;
+      if(pipelineChanged) material.needsUpdate=true;
+    });
+  }
+  function centerOf(kind){ return modelData.models[kind].bounds.center; }
+  function setModelPositions(state, progress=.73){
+    const stackCenter=modelData.combined_stack_bounds.center;
+    const shipCenter=centerOf('ship');
+    const boosterCenter=centerOf('booster');
+    shipMesh.position.set(-stackCenter[0],-stackCenter[1],-stackCenter[2]);
+    boosterMesh.position.set(-stackCenter[0],-stackCenter[1],-stackCenter[2]);
+    shipMesh.rotation.set(0,0,0);
+    boosterMesh.rotation.set(0,0,0);
+    if(state==='stack'){
+      shipMesh.visible=true; boosterMesh.visible=true;
+    }else if(state==='separation'){
+      shipMesh.visible=true; boosterMesh.visible=true;
+      shipMesh.position.y += .85*progress;
+      boosterMesh.position.y -= .28*progress;
+      shipMesh.rotation.z -= THREE.MathUtils.degToRad(7)*progress;
+    }else if(state==='booster'){
+      shipMesh.visible=false; boosterMesh.visible=true;
+      boosterMesh.position.set(-boosterCenter[0],-boosterCenter[1],-boosterCenter[2]);
+    }else if(state==='ship'){
+      shipMesh.visible=true; boosterMesh.visible=false;
+      shipMesh.position.set(-shipCenter[0],-shipCenter[1],-shipCenter[2]);
+    }else{
+      shipMesh.visible=false; boosterMesh.visible=false;
+    }
+  }
+
+  function phaseAt(tplus){
+    const pts=tplus+7;
+    if(pts<149.2) return {state:'stack',fade:1,progress:0};
+    if(pts<150.3) return {state:'separation',fade:1,progress:(pts-149.2)/1.1};
+    if(pts<197.6) return {state:'booster',fade:1,progress:1};
+    if(pts<198.0) return {state:'booster',fade:(198-pts)/.4,progress:1};
+    if(pts<429.5) return {state:'empty',fade:0,progress:1};
+    if(pts<430.0) return {state:'ship',fade:(pts-429.5)/.5,progress:1};
+    return {state:'ship',fade:1,progress:1};
+  }
+
+  function representativeFor(tplus,state){
+    const byId=id=>presets.find(item=>item.id===id);
+    if(state==='stack') return byId('stack');
+    if(state==='separation') return byId('separation');
+    if(state==='booster') return byId('booster');
+    if(state==='empty') return byId('empty');
+    if(tplus<1500) return byId('ship600');
+    if(tplus<3200) return byId('ship2400');
+    if(tplus<3782) return byId('ship3778');
+    if(tplus<3860) return byId('ship3800');
+    if(tplus<3880) return byId('ship3870');
+    return byId('ship3900');
+  }
+
+  function lowerBound(rows,value){
+    let low=0,high=rows.length;
+    while(low<high){
+      const middle=(low+high)>>1;
+      if(rows[middle][0]<value) low=middle+1;
+      else high=middle;
+    }
+    return low;
+  }
+
+  function nearestRow(rows,value,maxDistance=Infinity){
+    if(!rows?.length) return null;
+    const index=lowerBound(rows,value);
+    const candidates=[];
+    if(index<rows.length) candidates.push(rows[index]);
+    if(index>0) candidates.push(rows[index-1]);
+    const row=candidates.reduce((best,item)=>!best||Math.abs(item[0]-value)<Math.abs(best[0]-value)?item:best,null);
+    return row && Math.abs(row[0]-value)<=maxDistance ? row : null;
+  }
+
+  function periodicDelta(from,to,period=360){
+    return ((to-from+period/2)%period+period)%period-period/2;
+  }
+
+  function interpolatePeriodic(from,to,fraction,period=360){
+    return from+periodicDelta(from,to,period)*fraction;
+  }
+
+  function geometryCueAt(pts){
+    const rows=cueData?.geometry_samples;
+    if(!rows?.length) return null;
+    const index=lowerBound(rows,pts);
+    const before=index>0?rows[index-1]:null;
+    const after=index<rows.length?rows[index]:null;
+    const nearest=nearestRow(rows,pts,.55);
+    let axis=nearest?.[1] ?? null;
+    let confidence=nearest?.[2] ?? null;
+    let length=nearest?.[3] ?? null;
+    let width=nearest?.[4] ?? null;
+    let displayAxis=nearest?.[9] ?? null;
+    let continuityStatus=nearest?.[10] ?? null;
+    const centerDistance=nearest?.[13] ?? null;
+    const qualityFlags=nearest?.[14] ?? '';
+    if(before&&after&&after[0]>before[0]&&after[0]-before[0]<=1.01&&before[6]===after[6]&&before[1]!=null&&after[1]!=null){
+      const fraction=(pts-before[0])/(after[0]-before[0]);
+      axis=interpolatePeriodic(before[1],after[1],fraction,180);
+      confidence=before[2]+(after[2]-before[2])*fraction;
+      length=before[3]+(after[3]-before[3])*fraction;
+      width=before[4]+(after[4]-before[4])*fraction;
+      if(before[9]!=null&&after[9]!=null) displayAxis=before[9]+(after[9]-before[9])*fraction;
+      if(before[10]?.includes('off_center')||after[10]?.includes('off_center')) continuityStatus='off_center_component_ignored_and_bridged';
+      else if(before[10]?.includes('end_on')||after[10]?.includes('end_on')) continuityStatus='end_on_axis_bridged';
+      else if(before[10]?.includes('bridged')||after[10]?.includes('bridged')) continuityStatus='low_observability_bridged';
+      else if(before[10]?.includes('smoothed')||after[10]?.includes('smoothed')) continuityStatus='observed_axis_robust_smoothed';
+      else continuityStatus=confidence<.55?'low_observability_branch_held':'full_segment_unwrapped';
+    }
+    return {nearest,axis,confidence,length,width,displayAxis,continuityStatus,centerDistance,qualityFlags};
+  }
+
+  function materialCueAt(pts){
+    return nearestRow(cueData?.material_samples,pts,11);
+  }
+
+  function projectionPoseAt(pts){
+    const rows=cueData?.projection_pose_samples;
+    if(!rows?.length || pts<rows[0][0] || pts>rows.at(-1)[0]) return null;
+    const index=lowerBound(rows,pts);
+    const before=index>0?rows[index-1]:rows[0];
+    const after=index<rows.length?rows[index]:rows.at(-1);
+    const fraction=after[0]>before[0]?(pts-before[0])/(after[0]-before[0]):0;
+    const statuses=[String(before[7]||''),String(after[7]||'')];
+    const low=statuses.some(status=>status.includes('low_observability'));
+    const source=pts<780?'longitudinal_flip_display_path':'post_end_on_projection_path';
+    return {
+      tilt:before[1]+(after[1]-before[1])*fraction,
+      roll:interpolatePeriodic(before[2],after[2],fraction,360),
+      tiltMin:before[3]+(after[3]-before[3])*fraction,
+      tiltMax:before[4]+(after[4]-before[4])*fraction,
+      rollMin:before[5]+(after[5]-before[5])*fraction,
+      rollMax:before[6]+(after[6]-before[6])*fraction,
+      status:low?'low_observability_display_gauge':'projection_constrained',
+      source,
+      anchorStatus:statuses.join(' → ')
+    };
+  }
+
+  function continuousScreenLineDeg(geometry,preset){
+    return geometry?.displayAxis ?? (preset.rotation[2]+90);
+  }
+
+  function visualPoseAt(pts,preset){
+    const projected=preset.state==='ship'?projectionPoseAt(pts):null;
+    if(projected) return projected;
+    const anchors=visualPoseAnchors[preset.state];
+    if(!anchors?.length) return {tilt:preset.rotation[0],roll:preset.rotation[1],status:'manual_display_anchor',source:'display_anchor'};
+    const index=lowerBound(anchors.map(anchor=>[anchor.pts]),pts);
+    if(index<=0) return {...anchors[0],status:'manual_display_anchor',source:'display_anchor'};
+    if(index>=anchors.length) return {...anchors.at(-1),status:'manual_display_anchor',source:'display_anchor'};
+    const before=anchors[index-1],after=anchors[index];
+    const fraction=(pts-before.pts)/(after.pts-before.pts);
+    return {
+      tilt:before.tilt+(after.tilt-before.tilt)*fraction,
+      roll:interpolatePeriodic(before.roll,after.roll,fraction,360),
+      status:'manual_display_interpolation',
+      source:'display_anchor'
+    };
+  }
+
+  function effectiveRollTrimAt(pts){
+    if(rollTrimAnchorPts==null||!rollTrimDeg) return 0;
+    const distance=Math.abs(pts-rollTrimAnchorPts);
+    if(distance>10){
+      rollTrimDeg=0;
+      rollTrimAnchorPts=null;
+      document.getElementById('roll-trim').value=0;
+      return 0;
+    }
+    return rollTrimDeg*(1-distance/10);
+  }
+
+  function rendererRollCandidateAt(pts,visualPose,trimDeg=0){
+    // The stored late-Ship candidate uses the opposite sign from Three.js +Y.
+    // PTS 1700 is a zero-roll seam, so changing sign there is continuous.
+    const mapping=cueData?.projection_pose_contract?.renderer_roll_mapping;
+    const seam=Number(mapping?.zero_seam_pts_s ?? 1700);
+    const sign=pts>=seam?Number(mapping?.after_scale ?? -1):Number(mapping?.before_scale ?? 1);
+    const bounds=[
+      sign*(visualPose.rollMin ?? visualPose.roll)+trimDeg,
+      sign*(visualPose.rollMax ?? visualPose.roll)+trimDeg
+    ].sort((a,b)=>a-b);
+    return {
+      center:sign*visualPose.roll+trimDeg,
+      min:bounds[0],
+      max:bounds[1],
+      sign
+    };
+  }
+
+  function stateLabels(state){
+    return {
+      stack:['组合体','飞船 + 助推器','整箭几何'],
+      separation:['分离中的双对象','飞船 + 助推器','双对象，不存在单体姿态'],
+      booster:['助推器','助推器','助推器专用几何'],
+      empty:['No attitude widget','—','无图像观测'],
+      ship:['飞船','飞船','飞船专用几何']
+    }[state];
+  }
+
+  function setOverlayMode(enabled){
+    overlayMode=Boolean(enabled);
+    document.getElementById('overlay-toggle').checked=overlayMode;
+    document.getElementById('model-stage').classList.toggle('overlay',overlayMode);
+    document.getElementById('render').style.opacity=overlayMode?String(overlayOpacity):'1';
+    document.getElementById('model-panel-title').textContent=overlayMode?'原图 × 模型重叠抽样':'源模型简化复刻';
+    requestRender();
+    renderer.setClearColor(0x151a1f,overlayMode?0:1);
+    if(cueData||modelData) update(Number(document.getElementById('time').value));
+  }
+
+  function buildAnchorControls(){
+    const select=document.getElementById('anchor-select');
+    const current=document.createElement('option');
+    current.value=''; current.textContent='当前时间（非固定锚点）';
+    select.appendChild(current);
+    auditAnchors.forEach(anchor=>{
+      const option=document.createElement('option');
+      option.value=String(anchor.pts);
+      option.textContent=anchor.label;
+      select.appendChild(option);
+    });
+    const jump=delta=>{
+      const pts=Number(document.getElementById('time').value)+7;
+      let index=auditAnchors.reduce((best,item,itemIndex)=>Math.abs(item.pts-pts)<Math.abs(auditAnchors[best].pts-pts)?itemIndex:best,0);
+      index=Math.max(0,Math.min(auditAnchors.length-1,index+delta));
+      setOverlayMode(true);
+      update(auditAnchors[index].pts-7);
+    };
+    select.addEventListener('change',event=>{
+      if(!event.target.value) return;
+      setOverlayMode(true);
+      update(Number(event.target.value)-7);
+    });
+    document.getElementById('anchor-prev').addEventListener('click',()=>jump(-1));
+    document.getElementById('anchor-next').addEventListener('click',()=>jump(1));
+  }
+
+  function updateContextFrames(pts){
+    document.querySelectorAll('[data-context-offset]').forEach(figure=>{
+      const offset=Number(figure.dataset.contextOffset);
+      const target=pts+offset;
+      const image=figure.querySelector('img');
+      const detail=figure.querySelector('figcaption span');
+      const observation=target>=0&&target<=3930?nearestRow(cueData?.geometry_samples,target,.55):null;
+      if(!observation){
+        image.onerror=null;
+        image.removeAttribute('src');
+        image.classList.add('blank');
+        detail.textContent=`PTS ${target.toFixed(0)} · 无同秒 HUD 观测`;
+        return;
+      }
+      image.onerror=()=>{
+        image.onerror=null;
+        image.removeAttribute('src');
+        image.classList.add('blank');
+        detail.textContent=`PTS ${observation[0].toFixed(0)} · 图像不可用`;
+      };
+      image.src=`/source-hud/${observation[8]}/${observation[7]}`;
+      image.classList.remove('blank');
+      const state=phaseAt(observation[0]-7).state;
+      const quality=observation[10].includes('bridged')?'低可观·前后桥接':observation[10].includes('smoothed')?'稳健轴平滑':'全段连续约束';
+      detail.textContent=`PTS ${observation[0].toFixed(0)} · ${stateLabels(state)[0]} · ${quality}`;
+    });
+  }
+
+  function update(tplus,forcePreset=null){
+    tplus=Math.max(0,Math.min(3923,Number(tplus)||0));
+    const pts=tplus+7;
+    const phase=phaseAt(tplus);
+    const preset=forcePreset || representativeFor(tplus,phase.state);
+    activePreset=preset;
+    separationProgress=phase.progress;
+    const geometry=geometryCueAt(pts);
+    const material=phase.state==='ship'?materialCueAt(pts):null;
+    // The line angle is period-180 and deliberately carries no nose/tail sign.
+    // Longitudinal branch identity is represented by tilt crossing 90 degrees.
+    const screenLineDeg=continuousScreenLineDeg(geometry,preset);
+    const visualPose=visualPoseAt(pts,preset);
+    const effectiveRollTrim=effectiveRollTrimAt(pts);
+    const rendererRoll=rendererRollCandidateAt(pts,visualPose,effectiveRollTrim);
+    const tilt=THREE.MathUtils.degToRad(visualPose.tilt);
+    const roll=THREE.MathUtils.degToRad(rendererRoll.center);
+    const screen=THREE.MathUtils.degToRad(screenLineDeg-90);
+    const modelReady=Boolean(modelData&&shipMesh&&boosterMesh);
+    vehicle.rotation.set(0,0,0);
+    screenPose.rotation.set(0,0,screen);
+    tiltPose.rotation.set(tilt,0,0);
+    rollPose.rotation.set(0,roll,0);
+    vehicle.scale.setScalar(preset.scale);
+    if(modelReady){
+      setModelPositions(phase.state,phase.progress);
+      setOpacity(phase.fade);
+    }
+    const widgetVisible=phase.state!=='empty' && phase.fade>0;
+    const lowPose=visualPose.status==='low_observability_display_gauge';
+    const embedPoseVisible=!embedMode||!lowPose;
+    const replicaVisible=modelReady&&widgetVisible&&embedPoseVisible;
+    vehicle.visible=!embedMode||replicaVisible;
+    bodyAxes.visible=!embedMode&&modelReady&&widgetVisible&&phase.state!=='separation'&&!overlayMode;
+    grid.visible=modelReady&&widgetVisible&&embedPoseVisible&&!overlayMode;
+    document.getElementById('north').style.display=modelReady&&widgetVisible&&embedPoseVisible&&!overlayMode?'block':'none';
+    document.getElementById('body-axis-legend').style.display=bodyAxes.visible?'block':'none';
+    const poseBadge=document.getElementById('pose-badge');
+    poseBadge.style.display=widgetVisible?'block':'none';
+    const flipPath=visualPose.source==='longitudinal_flip_display_path';
+    const postEndOnPath=visualPose.source==='post_end_on_projection_path';
+    const cuePosePath=flipPath||postEndOnPath;
+    poseBadge.classList.toggle('low',lowPose);
+    poseBadge.textContent=flipPath
+      ? lowPose
+        ? `近端视桥接 · tilt ${visualPose.tiltMin.toFixed(0)}–${visualPose.tiltMax.toFixed(0)}° · roll 不可观`
+        : `纵向翻转显示路径 · tilt ${visualPose.tiltMin.toFixed(0)}–${visualPose.tiltMax.toFixed(0)}°`
+      : postEndOnPath
+        ? lowPose
+          ? `端视后低可观候选 · tilt ${visualPose.tiltMin.toFixed(0)}–${visualPose.tiltMax.toFixed(0)}° · roll 非唯一`
+          : `端视后投影候选 · tilt ${visualPose.tiltMin.toFixed(0)}–${visualPose.tiltMax.toFixed(0)}°`
+        : '显示锚点插值 · 非物理姿态';
+    const emptyMessage=document.getElementById('empty-message');
+    const modelUnavailable=widgetVisible&&!modelReady;
+    const embedPoseUnavailable=embedMode&&lowPose;
+    emptyMessage.classList.toggle('show',!widgetVisible||modelUnavailable||embedPoseUnavailable);
+    emptyMessage.textContent=embedPoseUnavailable?'低可观·姿态清空':!widgetVisible?'NO ATTITUDE WIDGET':modelLoadError?'MODEL RESOURCE UNAVAILABLE':'MODEL LOADING';
+    renderBodyAxis(
+      replicaVisible&&phase.state!=='separation',
+      lowPose?'低可观·姿态清空':phase.state==='separation'?'分离段·姿态清空':!widgetVisible?'无 HUD 姿态':'模型未就绪'
+    );
+    renderVelocityAxis(currentVelocity);
+
+    const ref=document.getElementById('reference');
+    const overlayRef=document.getElementById('overlay-reference');
+    const observation=geometry?.nearest;
+    if(!embedMode&&observation){
+      const fallback=preset.ref?assetRoot+preset.ref:null;
+      const sourceUrl=`/source-hud/${observation[8]}/${observation[7]}`;
+      ref.onerror=()=>{
+        ref.onerror=null;
+        if(fallback) ref.src=fallback;
+        else ref.classList.add('blank');
+      };
+      overlayRef.onerror=()=>{
+        overlayRef.onerror=null;
+        if(fallback) overlayRef.src=fallback;
+        else overlayRef.classList.add('blank');
+      };
+      ref.src=sourceUrl;
+      overlayRef.src=sourceUrl;
+      ref.classList.remove('blank');
+      overlayRef.classList.remove('blank');
+      const delta=observation[0]-pts;
+      document.getElementById('reference-label').textContent=`最近观测 PTS ${observation[0].toFixed(0)} · Δ${delta>=0?'+':''}${delta.toFixed(1)} s`;
+    }else if(!embedMode&&preset.ref){
+      ref.onerror=null;
+      ref.src=assetRoot+preset.ref;
+      overlayRef.onerror=null;
+      overlayRef.src=assetRoot+preset.ref;
+      ref.classList.remove('blank');
+      overlayRef.classList.remove('blank');
+      document.getElementById('reference-label').textContent=`代表帧 PTS ${preset.pts.toFixed(1)}`;
+    }else if(!embedMode){
+      ref.onerror=null;
+      ref.removeAttribute('src');
+      ref.classList.add('blank');
+      overlayRef.onerror=null;
+      overlayRef.removeAttribute('src');
+      overlayRef.classList.add('blank');
+      document.getElementById('reference-label').textContent='该时刻无姿态球';
+    }
+    document.getElementById('time').value=tplus.toFixed(1);
+    document.getElementById('time-input').value=tplus.toFixed(1);
+    document.getElementById('time-value').textContent=`T+ ${tplus.toFixed(1)}`;
+    document.getElementById('pts-value').textContent=`PTS ${pts.toFixed(1)} s`;
+    const labels=stateLabels(phase.state);
+    document.getElementById('identity').textContent=labels[0];
+    document.getElementById('model-name').textContent=labels[1];
+    document.getElementById('status').textContent=phase.state==='ship'&&cuePosePath
+      ? flipPath
+        ? lowPose?'近端视 · 显示桥接':'纵向翻转显示候选'
+        : lowPose?'端视后低可观候选':'端视后投影候选'
+      : labels[2];
+    document.getElementById('roll-trim-value').textContent=`${effectiveRollTrim>=0?'+':''}${effectiveRollTrim.toFixed(0)}°`;
+    const axisText=geometry?.confidence!=null?geometry.confidence.toFixed(2):'—';
+    const boundaryText=material?.[4]!=null?material[4].toFixed(2):'—';
+    const continuityText=geometry?.continuityStatus?.includes('off_center')?'背景组件已排除':geometry?.continuityStatus?.includes('end_on')?'端视轴桥接':geometry?.continuityStatus?.includes('bridged')?'低可观·前后桥接':geometry?.continuityStatus?.includes('smoothed')?'稳健轴平滑':'可靠轴展开';
+    const poseText=flipPath?(lowPose?'近端视非唯一':'纵向翻转路径'):postEndOnPath?(lowPose?'端视后非唯一':'端视后投影'):'显示锚点';
+    document.getElementById('cue-status').textContent=phase.state==='empty'?'无图像观测':`轴 ${axisText} · ${continuityText} · ${poseText} · 分界 ${boundaryText}`;
+    const axisDisplay=geometry?.displayAxis!=null?((geometry.displayAxis%180)+180)%180:null;
+    const displayRoll=((rendererRoll.center+180)%360+360)%360-180;
+    const displayRollBounds=[
+      displayRoll+periodicDelta(displayRoll,rendererRoll.min,360),
+      displayRoll+periodicDelta(displayRoll,rendererRoll.max,360)
+    ].sort((a,b)=>a-b);
+    const lengthElement=document.getElementById('anchor-length');
+    const lateLengthContaminated=phase.state==='ship'&&pts>=1900;
+    lengthElement.textContent=lateLengthContaminated
+      ? '污染 · 仅叠图'
+      : geometry?.length!=null?`${geometry.length.toFixed(1)} px`:'—';
+    lengthElement.title=lateLengthContaminated&&geometry?.length!=null
+      ? `自动亮区原始值 ${geometry.length.toFixed(1)} px；受背景/HUD 线污染，不可作为整船长度真值`
+      : '最亮中央连通域的参考轴长度，不是完整载具轮廓长度';
+    document.getElementById('anchor-axis').textContent=axisDisplay!=null?`${axisDisplay.toFixed(1)}°`:'—';
+    const rollSuffix=effectiveRollTrim?' · 人工微调':'';
+    document.getElementById('anchor-roll').textContent=lowPose
+      ? `中心 ${displayRoll>=0?'+':''}${displayRoll.toFixed(0)}° · 候选 ${displayRollBounds[0].toFixed(0)}…${displayRollBounds[1].toFixed(0)}°${rollSuffix}`
+      : `${displayRoll>=0?'+':''}${displayRoll.toFixed(1)}°${rollSuffix}`;
+    document.getElementById('anchor-state').textContent=lateLengthContaminated
+      ? '⚠ 背景/HUD 线污染 · 仅人工叠图'
+      : `${visualPose.tilt.toFixed(1)}° · ${flipPath?(lowPose?'近端视桥接':'翻转路径'):postEndOnPath?(lowPose?'端视后非唯一':'端视后分支'):'显示插值'}`;
+    const exactAnchor=auditAnchors.find(anchor=>Math.abs(anchor.pts-pts)<.06);
+    document.getElementById('anchor-select').value=exactAnchor?String(exactAnchor.pts):'';
+    if(!embedMode) updateContextFrames(pts);
+    document.getElementById('note').textContent = modelLoadError
+      ? `模型资源未连接：${modelLoadError.message}。原图与时间控件仍可独立使用；请通过 start-viewer.ps1 或 http://127.0.0.1:8765/ 打开。`
+      : cueLoadError
+        ? `HUD 线索未连接：${cueLoadError.message}。模型与内置代表帧仍可独立使用。`
+        : phase.state==='empty'
+      ? '该时段原视频没有姿态球：复刻结果必须为空，不能冻结上一帧模型。'
+      : phase.state==='ship'
+        ? '图像存在与姿态可用性已分开：弱帧仍显示原图。PTS 750–780 的近端视原始 blob 轴、以及 PTS 2027–2068 被标记为偏离中心的背景亮带都不会驱动显示方向，而由前后可靠帧桥接；纵向 tilt 连续穿过 90°。PTS 1700 以后保存候选的 roll 符号会映射为相反的 Three.js +Y 渲染符号，读数已经按渲染器约定显示。所有 tilt/roll 仍只是固定尺度 HUD 显示候选，不是物理姿态。'
+        : '左侧图像与屏幕长轴来自逐秒 HUD 观测；整箭与 Booster 的黑白面按分段抽帧锚点连续化，仍不是物理姿态。';
+    document.querySelectorAll('#presets button').forEach(button=>button.classList.toggle('active',button.dataset.id===preset.id && Math.abs(tplus-preset.tplus)<.06));
+    requestRender();
+  }
+
+  function buildPresetButtons(){
+    const host=document.getElementById('presets');
+    presets.forEach(preset=>{
+      const button=document.createElement('button');
+      button.type='button';
+      button.textContent=preset.label;
+      button.dataset.id=preset.id;
+      button.addEventListener('click',()=>update(preset.tplus,preset));
+      host.appendChild(button);
+    });
+    const reset=document.createElement('button');
+    reset.type='button'; reset.textContent='重置当前对照';
+    reset.addEventListener('click',()=>update(Number(document.getElementById('time').value),activePreset));
+    host.appendChild(reset);
+  }
+
+  let dragging=false,lastX=0,lastY=0;
+  canvas.addEventListener('pointerdown',event=>{
+    if(embedMode||overlayMode) return;
+    dragging=true;lastX=event.clientX;lastY=event.clientY;canvas.setPointerCapture(event.pointerId);
+  });
+  canvas.addEventListener('pointermove',event=>{
+    if(!dragging)return;
+    vehicle.rotation.y+=(event.clientX-lastX)*.008;
+    vehicle.rotation.x+=(event.clientY-lastY)*.008;
+    lastX=event.clientX;lastY=event.clientY;
+    requestRender();
+  });
+  canvas.addEventListener('pointerup',()=>dragging=false);
+  canvas.addEventListener('pointercancel',()=>dragging=false);
+  document.addEventListener('keydown',event=>{
+    if(overlayMode&&event.code==='Space'&&!/INPUT|SELECT|TEXTAREA/.test(event.target.tagName)){
+      event.preventDefault();
+      canvas.style.visibility='hidden';
+    }
+  });
+  document.addEventListener('keyup',event=>{
+    if(event.code==='Space') canvas.style.visibility='visible';
+  });
+
+  document.getElementById('time').addEventListener('input',event=>update(event.target.value));
+  document.getElementById('time-input').addEventListener('change',event=>update(event.target.value));
+  const rollTrim=document.getElementById('roll-trim');
+  rollTrimDeg=Math.max(-180,Math.min(180,rollTrimDeg));
+  rollTrim.value=rollTrimDeg;
+  rollTrim.addEventListener('input',event=>{
+    rollTrimDeg=Number(event.target.value);
+    rollTrimAnchorPts=Number(document.getElementById('time').value)+7;
+    update(document.getElementById('time').value);
+  });
+  document.getElementById('roll-reset').addEventListener('click',()=>{
+    rollTrimDeg=0;
+    rollTrimAnchorPts=null;
+    rollTrim.value=0;
+    update(document.getElementById('time').value);
+  });
+  buildPresetButtons();
+  buildAnchorControls();
+
+  const overlayToggle=document.getElementById('overlay-toggle');
+  const overlayOpacityInput=document.getElementById('overlay-opacity');
+  overlayOpacityInput.value=String(Math.round(overlayOpacity*100));
+  overlayToggle.addEventListener('change',event=>setOverlayMode(event.target.checked));
+  overlayOpacityInput.addEventListener('input',event=>{
+    overlayOpacity=Number(event.target.value)/100;
+    if(overlayMode) document.getElementById('render').style.opacity=String(overlayOpacity);
+  });
+  setOverlayMode(overlayMode);
+  update(initialTime,requestedPreset?initialPreset:null);
+
+  window.addEventListener('message',event=>{
+    if(!embedMode||event.origin!==location.origin||event.data?.type!=='flight13-time') return;
+    // A missing or invalid payload deliberately clears the velocity panel.
+    // Never preserve a vector from an earlier raw-fix interval.
+    currentVelocity=normalizeVelocityPayload(event.data.velocity);
+    update(event.data.tplus);
+  });
+
+  function reportEmbedHeight(){
+    if(embedMode) window.parent.postMessage({type:'flight13-hud-size',height:document.documentElement.scrollHeight},location.origin);
+  }
+  if(embedMode){
+    new ResizeObserver(reportEmbedHeight).observe(document.body);
+    window.parent.postMessage({type:'flight13-hud-ready'},location.origin);
+  }
+
+  function resize(){
+    const nativeHudSize=191;
+    if(canvas.width!==nativeHudSize||canvas.height!==nativeHudSize){
+      renderer.setSize(nativeHudSize,nativeHudSize,false);
+    }
+  }
+  const bodyAxisEndpoints={
+    x:new THREE.Vector3(0,bodyAxisLength,0),
+    y:new THREE.Vector3(0,0,-bodyAxisLength),
+    z:new THREE.Vector3(-bodyAxisLength,0,0)
+  };
+  function updateBodyAxisLabels(){
+    const visible=bodyAxes.visible;
+    Object.entries(bodyAxisEndpoints).forEach(([key,endpoint])=>{
+      const label=document.getElementById(`body-axis-${key}`);
+      label.style.display=visible?'block':'none';
+      if(!visible) return;
+      const projected=rollPose.localToWorld(endpoint.clone()).project(camera);
+      label.style.left=`${(projected.x*.5+.5)*100}%`;
+      label.style.top=`${(-projected.y*.5+.5)*100}%`;
+    });
+  }
+  window.addEventListener('resize',requestRender);
+  document.addEventListener('visibilitychange',()=>{ if(!document.hidden) requestRender(); });
+
+  const modelRequest=fetch(assetRoot+'vehicle-models.json')
+    .then(response=>{
+      if(!response.ok) throw new Error(`模型数据 HTTP ${response.status}`);
+      return response.json();
+    })
+    .then(data=>{
+      modelData=data;
+      shipMesh=meshFrom(modelData.models.ship);
+      boosterMesh=meshFrom(modelData.models.booster);
+      rollPose.add(shipMesh,boosterMesh);
+      update(Number(document.getElementById('time').value));
+    })
+    .catch(error=>{
+      modelLoadError=error;
+      update(Number(document.getElementById('time').value));
+    });
+
+  const cueRequest=Promise.resolve(null);
+
+  await Promise.allSettled([modelRequest,cueRequest]);
+</script>
+</body>
+</html>

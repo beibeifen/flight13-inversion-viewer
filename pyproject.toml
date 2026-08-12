@@ -1,0 +1,41 @@
+[build-system]
+requires = ["setuptools>=75"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "flight13-inversion-viewer"
+version = "2.0.0"
+description = "A synchronized evidence viewer for Starship Flight 13"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = []
+
+[project.scripts]
+flight13-viewer = "flight13_viewer.server:main"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.data-files]
+"share/flight13-viewer/app" = [
+  "app/index.html",
+  "app/viewer-data.json",
+  "app/viewer-data.json.gz",
+]
+"share/flight13-viewer/app/assets" = ["app/assets/*.css", "app/assets/*.js"]
+"share/flight13-viewer/app/hud" = ["app/hud/index.html"]
+"share/flight13-viewer/app/hud/assets" = ["app/hud/assets/*"]
+"share/flight13-viewer/app/vendor/three" = [
+  "app/vendor/three/LICENSE",
+  "app/vendor/three/three.module.js",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP"]

@@ -1,0 +1,200 @@
+﻿<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>星舰反演</title>
+  <script src="/assets/theme.js"></script>
+  <link rel="stylesheet" href="/assets/app.css">
+</head>
+<body>
+  <main class="app">
+    <header class="app-header">
+      <h1>星舰反演 · 公开演示版</h1>
+      <div id="loadStatus" class="loading" role="status">读取数据…</div>
+    </header>
+
+    <section class="workbench-grid" aria-label="视频与当前读数">
+      <div class="video-stack">
+        <article class="panel video-panel">
+          <div class="panel-header"><h2>本地任务视频（仓库不附带）</h2><span>T+ <strong id="videoTplus">00:00.000</strong></span></div>
+          <video id="sourceVideo" controls preload="none" playsinline aria-label="Flight 13 任务视频"></video>
+          <div class="video-meta" hidden><span id="scopeStatus">飞行范围</span></div>
+        </article>
+        <section class="panel timeline-panel" aria-label="共享时间轴">
+          <div class="panel-header">
+            <div class="transport">
+              <button id="prevFix" type="button">上个点</button><button id="minusSecond" type="button">−1 s</button><button id="minusFrame" type="button">−1 帧</button>
+              <button id="togglePlay" class="play" type="button">播放</button><button id="plusFrame" type="button">+1 帧</button><button id="plusSecond" type="button">+1 s</button><button id="nextFix" type="button">下个点</button>
+            </div>
+            <div class="panel-tools">
+              <label class="field-inline">T+ <input id="timeInput" type="number" min="0" max="3923" step="0.001" value="0"></label>
+              <label class="field-inline">× <select id="rateSelect"><option>0.25</option><option>0.5</option><option selected>1</option><option>1.5</option><option>2</option></select></label>
+            </div>
+          </div>
+          <div class="timeline-body">
+            <canvas id="timelineCanvas" role="img" aria-label="HUD 画面阶段时间轴"></canvas>
+            <label class="sr-only" for="timeRange">飞行 T+ 时间</label><input id="timeRange" type="range" min="0" max="3923" step="0.0333333333" value="0">
+            <div class="time-scale"><span>T+0</span><span>T+3923</span></div>
+          </div>
+        </section>
+      </div>
+
+      <aside class="panel snapshot-panel" aria-label="当前关键指标">
+        <div class="panel-header"><h2>当前数据</h2><span class="badge derived">合成演示</span></div>
+        <div class="snapshot-body">
+          <div class="snapshot-time"><span>任务时间</span><strong id="timeValue">T+ 00:00.000</strong></div>
+          <dl class="snapshot-grid">
+            <div class="snapshot-metric wide"><dt>对象 / 阶段</dt><dd id="objectValue">—</dd></div>
+            <div class="snapshot-metric"><dt>HUD 速度</dt><dd id="speedValue">—</dd></div>
+            <div class="snapshot-metric"><dt>HUD 高度</dt><dd id="altitudeValue">—</dd></div>
+            <div class="snapshot-metric"><dt>助推器相对推进剂图形</dt><dd id="boosterRingValue">—</dd></div>
+            <div class="snapshot-metric"><dt>飞船相对推进剂图形</dt><dd id="shipRingValue">—</dd></div>
+            <div class="snapshot-metric"><dt>点亮发动机图标数</dt><dd id="engineCountValue">—</dd></div>
+            <div class="snapshot-metric"><dt>环形模式</dt><dd id="ringModeValue">—</dd></div>
+          </dl>
+          <table class="compact-objects" aria-label="对象级速度和高度">
+            <thead><tr><th>对象</th><th>速度</th><th>高度</th></tr></thead>
+            <tbody>
+              <tr><td>组合体<small id="stackStatusCell" hidden>—</small></td><td id="stackSpeedCell">—</td><td id="stackAltitudeCell">—</td></tr>
+              <tr><td>飞船<small id="starshipStatusCell" hidden>—</small></td><td id="starshipSpeedCell">—</td><td id="starshipAltitudeCell">—</td></tr>
+              <tr><td>助推器<small id="superHeavyStatusCell" hidden>—</small></td><td id="superHeavySpeedCell">—</td><td id="superHeavyAltitudeCell">—</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </aside>
+    </section>
+
+    <section class="panel hud-panel" aria-labelledby="hudAttitudeHeading">
+      <div class="panel-header"><h2 id="hudAttitudeHeading">简化复刻 · 区间速度 · 弹体坐标</h2></div>
+      <div class="hud-frame-wrap"><iframe id="hudFrame" src="/hud/index.html?embed=1&t=0" title="同步三联坐标图" scrolling="no"></iframe></div>
+    </section>
+
+    <section class="derived-grid" aria-label="轨迹与瞬时状态">
+      <article class="panel trajectory-panel">
+        <div class="panel-header"><h2>轨迹演示（合成）</h2><div class="panel-tools"><button id="centerCurrent" type="button">对准当前</button></div></div>
+        <input id="showEstimate" type="checkbox" checked hidden><input id="showVelocity" type="checkbox" hidden><input id="showEcefAxes" type="checkbox" hidden>
+        <div class="canvas-wrap"><canvas id="globeCanvas" role="img" aria-label="合成轨迹三维演示视图"></canvas><div id="mapStatus" class="map-status">等待数据</div></div>
+      </article>
+
+      <article class="panel interval-panel" aria-labelledby="intervalHeading">
+        <div class="panel-header"><h2 id="intervalHeading">瞬时轨迹状态</h2><span class="badge derived">合成 1 Hz</span></div>
+        <div class="interval-summary"><strong id="intervalSummary">等待数据</strong><span id="intervalTimeBasis" class="sr-only">—</span></div>
+        <dl class="interval-grid">
+          <div class="interval-metric"><dt>瞬时 3D 速度</dt><dd id="intervalSpeedValue">—</dd></div>
+          <div class="interval-metric"><dt>瞬时地速</dt><dd id="intervalGroundValue">—</dd></div>
+          <div class="interval-metric"><dt>瞬时垂直速度</dt><dd id="intervalClimbValue">—</dd></div>
+          <div class="interval-metric"><dt>航向 / 航迹倾角</dt><dd id="intervalHeadingValue">—</dd></div>
+          <div class="interval-metric"><dt>ECEF Vx / Vy / Vz</dt><dd id="intervalEcefValue">—</dd></div>
+          <div class="interval-metric"><dt>ENU 东 / 北 / 上</dt><dd id="intervalEnuValue">—</dd></div>
+          <div class="interval-metric"><dt>纬度 / 经度</dt><dd id="intervalDistanceValue">—</dd></div>
+          <div class="interval-metric"><dt>高度 / 离发射台距离</dt><dd id="fixStatusValue">—</dd></div>
+        </dl>
+        <div id="intervalGuard" class="interval-guard"><strong id="intervalStatus">等待数据</strong></div>
+        <span id="intervalBasisValue" hidden></span><span id="prevFixValue" hidden></span><span id="nextFixValue" hidden></span>
+        <details id="estimateDetails" hidden>
+          <summary>条件轨迹</summary>
+          <div class="estimate-grid">
+            <div class="estimate-item"><span>状态</span><strong id="estimateStatus">已关闭</strong></div>
+            <div class="estimate-item"><span>高度</span><strong id="estimateAltitude">—</strong></div>
+            <div class="estimate-item"><span>ECEF 速度</span><strong id="estimateSpeed">—</strong></div>
+            <div class="estimate-item"><span>ECEF 分量</span><strong id="estimateEcefVector">—</strong></div>
+            <div class="estimate-item"><span>ENU 分量</span><strong id="estimateVelocity">—</strong></div>
+            <div class="estimate-item"><span>地速 / 航向</span><strong id="estimateGround">—</strong></div>
+            <div class="estimate-item"><span>航迹倾角 / 距离</span><strong id="estimatePath">—</strong></div>
+            <div class="estimate-item"><span>阶段 / 质量</span><strong id="estimateQuality">—</strong></div>
+          </div>
+          <span id="estimateLatLon" hidden></span>
+        </details>
+      </article>
+    </section>
+
+    <section class="panel scenario-panel" aria-labelledby="scenarioHeading">
+      <div class="panel-header"><h2 id="scenarioHeading">推进剂与四参数绝对质量</h2><span class="badge derived">绝对质量（t）· 条件模型</span></div>
+      <div class="inversion-body">
+        <div class="inversion-observation-grid" aria-label="当前推进剂图形观测">
+          <div class="inversion-observation"><span>当前仪表模式</span><strong id="propellantMode">—</strong></div>
+          <div class="inversion-observation"><span>点亮发动机图标</span><strong id="propellantEngines">—</strong></div>
+          <div class="inversion-observation"><span>助推器图形量程</span><strong id="propellantBoosterLevel">—</strong></div>
+          <div class="inversion-observation"><span>飞船图形量程</span><strong id="propellantShipLevel">—</strong></div>
+        </div>
+
+        <div class="mass-parameter-panel" aria-label="四参数绝对质量模型输入">
+          <div class="mass-parameter-grid">
+            <label class="mass-parameter-field" for="massInitialTotal"><span>起飞初始总质量 M<sub>0</sub></span><input id="massInitialTotal" type="number" min="0.01" max="100000" step="1" value="4929">t</label>
+            <label class="mass-parameter-field" for="massBoosterWeight"><span>Super Heavy 起飞质量占比 w<sub>B</sub></span><input id="massBoosterWeight" type="number" min="0.01" max="99.99" step="0.01" value="73.2603">%</label>
+            <label class="mass-parameter-field" for="massBoosterDry"><span>Super Heavy 干质量 D<sub>B</sub></span><input id="massBoosterDry" type="number" min="0" max="100000" step="1" value="311">t</label>
+            <label class="mass-parameter-field" for="massShipDry"><span>Ship 干质量 D<sub>S</sub></span><input id="massShipDry" type="number" min="0" max="100000" step="1" value="118">t</label>
+          </div>
+          <button id="resetMassParameters" class="mass-parameter-reset" type="button">恢复 DLR 默认值</button>
+        </div>
+
+        <div class="mass-composition" aria-label="起飞绝对质量组成">
+          <div class="mass-composition-header"><h3>起飞质量组成</h3><strong id="massTotalValue">起飞 4929 t</strong></div>
+          <div class="mass-stack" aria-hidden="true">
+            <span id="massBoosterPropellantSegment" class="mass-segment booster-propellant" style="width:66.9507%"></span>
+            <span id="massBoosterDrySegment" class="mass-segment booster-dry" style="width:6.3096%"></span>
+            <span id="massShipPropellantSegment" class="mass-segment ship-propellant" style="width:24.3457%"></span>
+            <span id="massShipDrySegment" class="mass-segment ship-dry" style="width:2.3940%"></span>
+          </div>
+          <div class="mass-breakdown-grid">
+            <div class="mass-breakdown-card"><span>Super Heavy 推进剂跨度</span><strong id="massBoosterPropellantValue">3300 t</strong></div>
+            <div class="mass-breakdown-card"><span>Super Heavy 干质量</span><strong id="massBoosterDryValue">311 t</strong></div>
+            <div class="mass-breakdown-card"><span>Ship 推进剂跨度</span><strong id="massShipPropellantValue">1200 t</strong></div>
+            <div class="mass-breakdown-card"><span>Ship 干质量</span><strong id="massShipDryValue">118 t</strong></div>
+          </div>
+          <div id="massCompositionSummary" class="mass-composition-summary">Super Heavy 3611 t / Ship 1318 t / 起飞合计 4929 t</div>
+        </div>
+
+        <div class="inversion-output-grid" aria-label="当前绝对质量估算">
+          <div class="inversion-output"><span>Super Heavy 当前质量</span><strong id="absoluteBoosterMass">—</strong></div>
+          <div class="inversion-output"><span>Ship 当前质量</span><strong id="absoluteShipMass">—</strong></div>
+          <div class="inversion-output"><span>组合体质量</span><strong id="absoluteCombinedMass">—</strong></div>
+        </div>
+
+        <div class="inversion-method-grid" aria-label="发动机燃烧阶段">
+          <div class="inversion-method-step"><span>一级阶段</span><strong>33 发起飞 · 13→3→2→1 关机</strong><code>上升 T+0–174.6 · 降落 10→8→5 · T+385.5–422.4</code></div>
+          <div class="inversion-method-step"><span>二级阶段</span><strong>6 发上升 T+142.3–484.6</strong><code>单发 T+2340.4–2355.4 · 降落 3→2→1 · T+3902.4–3922.4</code></div>
+          <div class="inversion-method-step"><span>曲线规则</span><strong>燃烧时下降 · 滑行时水平</strong><code>切换窗只连接前后可信圆弧 · 分离后不再相加</code></div>
+        </div>
+
+        <div class="inversion-method-grid" aria-label="绝对质量依据">
+          <div class="inversion-method-step"><span>公开演示</span><strong>q<sub>B</sub>(t)、q<sub>S</sub>(t) 为合成序列</strong><code>仅验证两级独立尺度与质量映射交互</code></div>
+          <div class="inversion-method-step"><span>默认参数</span><strong>DLR 模型：3300+311 / 1200+118 吨</strong><code>M0 4929 t · wB 73.2603% · DB 311 t · DS 118 t</code></div>
+          <div class="inversion-method-step"><span>可辨识边界</span><strong>绝对质量参数均为条件输入</strong><code>视频只决定 qB(t)、qS(t) · q=0 按输入干质量闭合</code></div>
+        </div>
+
+        <div class="scenario-chart-wrap"><canvas id="absoluteMassCanvas" role="img" aria-label="T+0–3923 发动机阶段门控的四参数条件绝对质量（吨）"></canvas></div>
+      </div>
+    </section>
+
+    <section class="panel formula-panel" aria-label="四参数绝对质量体系公式">
+      <div class="formula-stack">
+        <div class="formula-line">I<sub>B</sub>(t), I<sub>S</sub>(t) ∈ [0, 100] ; q<sub>B</sub>(t) = I<sub>B</sub>(t) / 100 ; q<sub>S</sub>(t) = I<sub>S</sub>(t) / 100</div>
+        <div class="formula-line">M<sub>0</sub> &gt; 0 ; 0 &lt; w<sub>B</sub> &lt; 1 ; 0 ≤ q<sub>B</sub>(t), q<sub>S</sub>(t) ≤ 1</div>
+        <div class="formula-line">0 ≤ D<sub>B</sub> ≤ w<sub>B</sub>M<sub>0</sub> ; 0 ≤ D<sub>S</sub> ≤ (1 − w<sub>B</sub>)M<sub>0</sub></div>
+        <div class="formula-line">M<sub>B,0</sub> = w<sub>B</sub>M<sub>0</sub> ; M<sub>S,0</sub> = (1 − w<sub>B</sub>)M<sub>0</sub></div>
+        <div class="formula-line">P<sub>B,0</sub> = M<sub>B,0</sub> − D<sub>B</sub> = w<sub>B</sub>M<sub>0</sub> − D<sub>B</sub></div>
+        <div class="formula-line">P<sub>S,0</sub> = M<sub>S,0</sub> − D<sub>S</sub> = (1 − w<sub>B</sub>)M<sub>0</sub> − D<sub>S</sub></div>
+        <div class="formula-line">P<sub>B,0</sub>, P<sub>S,0</sub> ≥ 0</div>
+        <div class="formula-line">M<sub>B</sub>(t) = D<sub>B</sub> + P<sub>B,0</sub>q<sub>B</sub>(t)</div>
+        <div class="formula-line">M<sub>S</sub>(t) = D<sub>S</sub> + P<sub>S,0</sub>q<sub>S</sub>(t)</div>
+        <div class="formula-line">M<sub>Σ</sub>(t) = M<sub>B</sub>(t) + M<sub>S</sub>(t), t ≤ t<sub>sep</sub> ; M<sub>Σ</sub>(t) = ∅, t &gt; t<sub>sep</sub></div>
+        <div class="formula-line">M<sub>B</sub>(q<sub>B</sub>=1) = M<sub>B,0</sub> ; M<sub>B</sub>(q<sub>B</sub>=0) = D<sub>B</sub> ; M<sub>S</sub>(q<sub>S</sub>=1) = M<sub>S,0</sub> ; M<sub>S</sub>(q<sub>S</sub>=0) = D<sub>S</sub></div>
+        <div class="formula-line">q̇<sub>i</sub>(t) = 0, t ∉ ⋃<sub>k</sub> ℬ<sub>i,k</sub>, i ∈ {B, S}</div>
+        <div class="formula-line">M<sub>0</sub><sup>(0)</sup> = (3300 + 311 + 1200 + 118) t = 4929 t</div>
+        <div class="formula-line">w<sub>B</sub><sup>(0)</sup> = (3300 + 311) / (3300 + 311 + 1200 + 118) = 3611 / 4929 = 0.7326029621</div>
+        <div class="formula-line">D<sub>B</sub><sup>(0)</sup> = 311 t ; D<sub>S</sub><sup>(0)</sup> = 118 t</div>
+        <div class="formula-line">P<sub>B,0</sub><sup>(0)</sup> = 3300 t ; P<sub>S,0</sub><sup>(0)</sup> = 1200 t</div>
+        <div class="formula-line">(M<sub>0</sub>, D<sub>B</sub>, D<sub>S</sub>, P<sub>B,0</sub>, P<sub>S,0</sub>, M<sub>B</sub>, M<sub>S</sub>) ∼ λ(M<sub>0</sub>, D<sub>B</sub>, D<sub>S</sub>, P<sub>B,0</sub>, P<sub>S,0</sub>, M<sub>B</sub>, M<sub>S</sub>), λ &gt; 0</div>
+      </div>
+    </section>
+
+    <footer class="lean-footer">公开仓库仅附带合成演示数据，不含 Flight 13 第三方轨迹、HUD 观测、广播截图或视频。载具几何：Clarence365 / Sketchfab，CC BY 4.0，经简化和浏览器适配。</footer>
+    <span id="videoPts" hidden></span><span id="videoFrame" hidden></span><span id="ptsFrameValue" hidden></span><span id="objectMeta" hidden></span><span id="clockValue" hidden></span><span id="speedMeta" hidden></span><span id="altitudeMeta" hidden></span><span id="hudSampleValue" hidden></span><span id="hudQcValue" hidden></span><span id="boosterRingMeta" hidden></span><span id="shipRingMeta" hidden></span><span id="prevFixMeta" hidden></span><span id="nextFixMeta" hidden></span>
+    <div id="ariaStatus" class="sr-only" aria-live="polite"></div>
+  </main>
+
+  <script src="/assets/app.js" defer></script>
+</body>
+</html>

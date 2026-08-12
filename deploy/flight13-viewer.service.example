@@ -1,0 +1,19 @@
+[Unit]
+Description=Flight 13 synchronized evidence viewer
+After=network.target
+
+[Service]
+Type=simple
+User=flight13
+Group=flight13
+WorkingDirectory=/opt/flight13-viewer
+ExecStart=/opt/flight13-viewer/.venv/bin/flight13-viewer --host 127.0.0.1 --port 8766 --video-path /srv/flight13-viewer-media/Flight13_web_720p.mp4 --source-hud-archive /opt/flight13-viewer/runtime/source-hud.zip --no-open
+Restart=on-failure
+PrivateTmp=true
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadOnlyPaths=/opt/flight13-viewer /srv/flight13-viewer-media
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,22 @@
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.venv/
+.wheel-test/
+dist/
+build/
+*.egg-info/
+
+# Runtime-only data. Keep these outside normal Git history.
+media/*.mp4
+runtime/*.zip
+runtime/*.tmp
+
+# Local service output and editor state.
+*.log
+.env
+.idea/
+.vscode/
+Thumbs.db
+.DS_Store
