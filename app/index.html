@@ -110,7 +110,7 @@
     </section>
 
     <section class="panel scenario-panel" aria-labelledby="scenarioHeading">
-      <div class="panel-header"><h2 id="scenarioHeading">推进剂与四参数绝对质量</h2><span class="badge derived">绝对质量（t）· 条件模型</span></div>
+      <div class="panel-header"><h2 id="scenarioHeading">推进剂与四参数条件质量</h2><span class="badge derived">质量（t）· 条件前向映射</span></div>
       <div class="inversion-body">
         <div class="inversion-observation-grid" aria-label="当前推进剂图形观测">
           <div class="inversion-observation"><span>当前仪表模式</span><strong id="propellantMode">—</strong></div>
@@ -158,35 +158,83 @@
           <div class="inversion-method-step"><span>曲线规则</span><strong>燃烧时下降 · 滑行时水平</strong><code>切换窗只连接前后可信圆弧 · 分离后不再相加</code></div>
         </div>
 
-        <div class="inversion-method-grid" aria-label="绝对质量依据">
+        <div class="inversion-method-grid" aria-label="条件质量依据">
           <div class="inversion-method-step"><span>公开演示</span><strong>q<sub>B</sub>(t)、q<sub>S</sub>(t) 为合成序列</strong><code>仅验证两级独立尺度与质量映射交互</code></div>
-          <div class="inversion-method-step"><span>默认参数</span><strong>DLR 模型：3300+311 / 1200+118 吨</strong><code>M0 4929 t · wB 73.2603% · DB 311 t · DS 118 t</code></div>
-          <div class="inversion-method-step"><span>可辨识边界</span><strong>绝对质量参数均为条件输入</strong><code>视频只决定 qB(t)、qS(t) · q=0 按输入干质量闭合</code></div>
+          <div class="inversion-method-step"><span>计算性质</span><strong>圆弧比例 → 外给端点之间的条件质量</strong><code>不是动力学反演，不输出推力</code></div>
+          <div class="inversion-method-step"><span>与下方模型的关系</span><strong>完全独立</strong><code>下方反演不读取本板块任何质量</code></div>
         </div>
 
         <div class="scenario-chart-wrap"><canvas id="absoluteMassCanvas" role="img" aria-label="T+0–3923 发动机阶段门控的四参数条件绝对质量（吨）"></canvas></div>
+        <div class="scenario-time-control">
+          <label class="sr-only" for="massTimeRange">条件质量曲线 T+ 时间</label><input id="massTimeRange" type="range" min="0" max="3923" step="0.0333333333" value="0">
+          <div class="time-scale"><span>T+0</span><span>T+3923</span></div>
+        </div>
       </div>
     </section>
 
-    <section class="panel formula-panel" aria-label="四参数绝对质量体系公式">
-      <div class="formula-stack">
-        <div class="formula-line">I<sub>B</sub>(t), I<sub>S</sub>(t) ∈ [0, 100] ; q<sub>B</sub>(t) = I<sub>B</sub>(t) / 100 ; q<sub>S</sub>(t) = I<sub>S</sub>(t) / 100</div>
-        <div class="formula-line">M<sub>0</sub> &gt; 0 ; 0 &lt; w<sub>B</sub> &lt; 1 ; 0 ≤ q<sub>B</sub>(t), q<sub>S</sub>(t) ≤ 1</div>
-        <div class="formula-line">0 ≤ D<sub>B</sub> ≤ w<sub>B</sub>M<sub>0</sub> ; 0 ≤ D<sub>S</sub> ≤ (1 − w<sub>B</sub>)M<sub>0</sub></div>
-        <div class="formula-line">M<sub>B,0</sub> = w<sub>B</sub>M<sub>0</sub> ; M<sub>S,0</sub> = (1 − w<sub>B</sub>)M<sub>0</sub></div>
-        <div class="formula-line">P<sub>B,0</sub> = M<sub>B,0</sub> − D<sub>B</sub> = w<sub>B</sub>M<sub>0</sub> − D<sub>B</sub></div>
-        <div class="formula-line">P<sub>S,0</sub> = M<sub>S,0</sub> − D<sub>S</sub> = (1 − w<sub>B</sub>)M<sub>0</sub> − D<sub>S</sub></div>
-        <div class="formula-line">P<sub>B,0</sub>, P<sub>S,0</sub> ≥ 0</div>
-        <div class="formula-line">M<sub>B</sub>(t) = D<sub>B</sub> + P<sub>B,0</sub>q<sub>B</sub>(t)</div>
-        <div class="formula-line">M<sub>S</sub>(t) = D<sub>S</sub> + P<sub>S,0</sub>q<sub>S</sub>(t)</div>
-        <div class="formula-line">M<sub>Σ</sub>(t) = M<sub>B</sub>(t) + M<sub>S</sub>(t), t ≤ t<sub>sep</sub> ; M<sub>Σ</sub>(t) = ∅, t &gt; t<sub>sep</sub></div>
-        <div class="formula-line">M<sub>B</sub>(q<sub>B</sub>=1) = M<sub>B,0</sub> ; M<sub>B</sub>(q<sub>B</sub>=0) = D<sub>B</sub> ; M<sub>S</sub>(q<sub>S</sub>=1) = M<sub>S,0</sub> ; M<sub>S</sub>(q<sub>S</sub>=0) = D<sub>S</sub></div>
-        <div class="formula-line">q̇<sub>i</sub>(t) = 0, t ∉ ⋃<sub>k</sub> ℬ<sub>i,k</sub>, i ∈ {B, S}</div>
-        <div class="formula-line">M<sub>0</sub><sup>(0)</sup> = (3300 + 311 + 1200 + 118) t = 4929 t</div>
-        <div class="formula-line">w<sub>B</sub><sup>(0)</sup> = (3300 + 311) / (3300 + 311 + 1200 + 118) = 3611 / 4929 = 0.7326029621</div>
-        <div class="formula-line">D<sub>B</sub><sup>(0)</sup> = 311 t ; D<sub>S</sub><sup>(0)</sup> = 118 t</div>
-        <div class="formula-line">P<sub>B,0</sub><sup>(0)</sup> = 3300 t ; P<sub>S,0</sub><sup>(0)</sup> = 1200 t</div>
-        <div class="formula-line">(M<sub>0</sub>, D<sub>B</sub>, D<sub>S</sub>, P<sub>B,0</sub>, P<sub>S,0</sub>, M<sub>B</sub>, M<sub>S</sub>) ∼ λ(M<sub>0</sub>, D<sub>B</sub>, D<sub>S</sub>, P<sub>B,0</sub>, P<sub>S,0</sub>, M<sub>B</sub>, M<sub>S</sub>), λ &gt; 0</div>
+    <section class="panel rated-inversion-panel" aria-labelledby="ratedInversionHeading">
+      <div class="panel-header">
+        <h2 id="ratedInversionHeading">用发动机推力反推飞行中的质量（合成输入演示）</h2><span class="badge derived">非 Flight 13 结果</span>
+      </div>
+      <div class="rated-inversion-body">
+        <h3 class="rated-section-title">输入</h3>
+        <div class="rated-value-grid rated-input-values" aria-label="当前时刻反演输入">
+          <div><span>时刻 / 对象</span><strong id="ratedWindowStatus">T+60.0 / 组合体</strong></div>
+          <div><span>发动机数量</span><strong id="ratedEngineCountValue">—</strong></div>
+          <div><span>额定推力</span><strong id="ratedThrustValue">—</strong></div>
+          <div><span>轨迹速度</span><strong id="ratedSpeedValue">—</strong></div>
+          <div><span>轨迹高度</span><strong id="ratedAltitudeValue">—</strong></div>
+          <div><span>非重力加速度</span><strong id="ratedDynamicsValue">—</strong></div>
+          <div><span>马赫数 / C<sub>D</sub> / 阻力</span><strong id="ratedAeroValue">—</strong></div>
+        </div>
+
+        <h3 class="rated-section-title">输出</h3>
+        <div class="rated-value-grid rated-output-values" aria-label="当前时刻反演输出">
+          <div class="primary"><span>质量</span><strong id="ratedMassValue">—</strong></div>
+          <div><span>质量范围</span><strong id="ratedMassInterval">—</strong></div>
+          <div><span>推力方向夹角</span><strong id="ratedDirectionValue">—</strong></div>
+          <div><span>敏感性样本</span><strong id="ratedQualityValue">—</strong></div>
+        </div>
+
+        <div class="rated-snapshot-grid" aria-label="选择代表时刻">
+          <button type="button" data-rated-seek="60"><span>组合体 · T+60</span><strong id="ratedSnapshot60Mass">—</strong><code id="ratedSnapshot60Range">—</code></button>
+          <button type="button" data-rated-seek="250"><span>Ship · T+250</span><strong id="ratedSnapshot250Mass">—</strong><code id="ratedSnapshot250Range">—</code></button>
+          <button type="button" data-rated-seek="420"><span>Ship · T+420</span><strong id="ratedSnapshot420Mass">—</strong><code id="ratedSnapshot420Range">—</code></button>
+        </div>
+
+        <div class="rated-main-chart">
+          <div class="rated-chart-heading"><h3>质量曲线</h3></div>
+          <canvas id="ratedMassCanvas" role="img" aria-label="由额定推力和轨迹反推的质量曲线（吨）"></canvas>
+        </div>
+        <div class="scenario-time-control rated-time-control">
+          <label class="sr-only" for="ratedMassTimeRange">动力学质量反演 T+ 时间</label><input id="ratedMassTimeRange" type="range" min="0" max="500" step="0.0333333333" value="60">
+          <div class="time-scale"><span>T+0</span><span>T+500</span></div>
+        </div>
+
+        <h3 class="rated-section-title">窗口端点质量差</h3>
+        <div class="rated-consumption-grid" aria-label="合成数据下的窗口端点质量差">
+          <div><span>Booster · T+20–114</span><strong id="ratedBoosterConsumed">—</strong><code id="ratedBoosterConsumedRange">—</code></div>
+          <div><span>Ship · T+192–468</span><strong id="ratedShipConsumed">—</strong><code id="ratedShipConsumedRange">—</code></div>
+        </div>
+
+        <details class="rated-parameter-panel">
+            <summary>输入参数</summary>
+            <div class="rated-parameter-grid">
+              <label class="rated-parameter-field" for="ratedBoosterSeaLevelTf"><span>Super Heavy 33 发推力</span><input id="ratedBoosterSeaLevelTf" type="number" min="1" step="1" value="8240">tf</label>
+              <label class="rated-parameter-field" for="ratedRaptorSeaLevelTf"><span>Raptor 推力</span><input id="ratedRaptorSeaLevelTf" type="number" min="1" step="1" value="250">tf</label>
+              <label class="rated-parameter-field" for="ratedRaptorVacuumTf"><span>Raptor Vacuum 推力</span><input id="ratedRaptorVacuumTf" type="number" min="1" step="1" value="275">tf</label>
+              <label class="rated-parameter-field" for="ratedThrustUncertainty"><span>推力范围</span><input id="ratedThrustUncertainty" type="number" min="0" max="50" step="0.5" value="3">%</label>
+              <label class="rated-parameter-field" for="ratedRaptorDiameter"><span>Raptor 出口直径</span><input id="ratedRaptorDiameter" type="number" min="0.1" step="0.1" value="1.3">m</label>
+              <label class="rated-parameter-field" for="ratedRaptorVacuumDiameter"><span>RVac 出口直径</span><input id="ratedRaptorVacuumDiameter" type="number" min="0.1" step="0.1" value="2.3">m</label>
+              <label class="rated-parameter-field" for="ratedVehicleDiameter"><span>参考直径</span><input id="ratedVehicleDiameter" type="number" min="0.1" step="0.1" value="9">m</label>
+              <label class="rated-parameter-field" for="ratedCdUncertainty"><span>C<sub>D</sub> 范围</span><input id="ratedCdUncertainty" type="number" min="0" max="100" step="1" value="25">%</label>
+              <label class="rated-parameter-field" for="ratedCdSubsonic"><span>C<sub>D</sub> · M≤0.8</span><input id="ratedCdSubsonic" type="number" min="0" max="3" step="0.01" value="0.30"></label>
+              <label class="rated-parameter-field" for="ratedCdTransonic"><span>C<sub>D</sub> · M=1.05</span><input id="ratedCdTransonic" type="number" min="0" max="3" step="0.01" value="0.60"></label>
+              <label class="rated-parameter-field" for="ratedCdSupersonic"><span>C<sub>D</sub> · M=1.5</span><input id="ratedCdSupersonic" type="number" min="0" max="3" step="0.01" value="0.35"></label>
+              <label class="rated-parameter-field" for="ratedCdHypersonic"><span>C<sub>D</sub> · M≥5</span><input id="ratedCdHypersonic" type="number" min="0" max="3" step="0.01" value="0.30"></label>
+            </div>
+            <div class="rated-parameter-actions"><button id="resetRatedParameters" type="button">重置</button></div>
+        </details>
       </div>
     </section>
 

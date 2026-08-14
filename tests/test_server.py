@@ -83,7 +83,7 @@ class ServerContractTests(unittest.TestCase):
         parsed = json.loads(gzip.decompress(body))
         self.assertEqual(
             parsed["schema_version"],
-            "flight13-timeline-viewer-data-v1.4-public-demo",
+            "flight13-timeline-viewer-data-v1.5-public-demo",
         )
 
     def test_health_reports_runtime_resources(self) -> None:

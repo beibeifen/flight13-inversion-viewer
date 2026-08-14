@@ -20,7 +20,7 @@ class FrozenDataContractTests(unittest.TestCase):
     def test_bundle_schema_and_interpretation_boundaries(self) -> None:
         self.assertEqual(
             self.data["schema_version"],
-            "flight13-timeline-viewer-data-v1.4-public-demo",
+            "flight13-timeline-viewer-data-v1.5-public-demo",
         )
         self.assertEqual(self.data["distribution"]["profile"], "public_synthetic_demo")
         self.assertFalse(self.data["distribution"]["contains_flight_observations"])
@@ -40,7 +40,7 @@ class FrozenDataContractTests(unittest.TestCase):
 
     def test_frozen_table_shapes(self) -> None:
         column_counts = {
-            "trajectory": 22,
+            "trajectory": 25,
             "fixes": 14,
             "tracker_intervals": 36,
             "telemetry": 21,
@@ -60,6 +60,19 @@ class FrozenDataContractTests(unittest.TestCase):
         self.assertEqual(intervals["hard_gaps_crossed"], 0)
         self.assertIn("synthetic", intervals["source_semantics"])
         self.assertEqual(intervals["source_validation_status"], "SYNTHETIC_DEMO")
+
+    def test_trajectory_carries_synthetic_second_derivative(self) -> None:
+        trajectory = self.data["trajectory"]
+        for column in ("ecef_ax_mps2", "ecef_ay_mps2", "ecef_az_mps2"):
+            self.assertIn(column, trajectory["columns"])
+        sample = dict(zip(trajectory["columns"], trajectory["rows"][2]))
+        self.assertEqual(sample["tplus_s"], 2.0)
+        self.assertTrue(
+            all(
+                isinstance(sample[column], (int, float))
+                for column in ("ecef_ax_mps2", "ecef_ay_mps2", "ecef_az_mps2")
+            )
+        )
 
     def test_ring_payload_shape(self) -> None:
         ring = self.data["ring"]

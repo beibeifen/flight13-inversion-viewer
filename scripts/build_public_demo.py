@@ -67,20 +67,42 @@ def build_trajectory() -> dict[str, Any]:
     columns = [
         "tplus_s", "file_pts_s", "tracker_source_met_s", "ecef_x_m", "ecef_y_m",
         "ecef_z_m", "latitude_deg", "longitude_deg", "ellipsoid_altitude_km",
-        "ecef_vx_mps", "ecef_vy_mps", "ecef_vz_mps", "ecef_speed_kmh",
+        "ecef_vx_mps", "ecef_vy_mps", "ecef_vz_mps",
+        "ecef_ax_mps2", "ecef_ay_mps2", "ecef_az_mps2", "ecef_speed_kmh",
         "east_velocity_mps", "north_velocity_mps", "vertical_velocity_mps",
         "ground_speed_kmh", "heading_deg", "flight_path_angle_deg",
         "distance_from_pad_km", "phase_label", "derivative_quality_code",
     ]
     positions = {t: trajectory_state(t) for t in range(T_MAX + 1)}
+    ecef_positions = {t: ecef(*position) for t, position in positions.items()}
     rows: list[list[Any]] = []
     pad_lat, pad_lon, _ = positions[0]
     for t in range(T_MAX + 1):
         left = positions[max(0, t - 1)]
         right = positions[min(T_MAX, t + 1)]
         dt = 1 if t in {0, T_MAX} else 2
-        left_ecef, right_ecef = ecef(*left), ecef(*right)
+        left_ecef = ecef_positions[max(0, t - 1)]
+        center_ecef = ecef_positions[t]
+        right_ecef = ecef_positions[min(T_MAX, t + 1)]
         velocity = tuple((right_ecef[i] - left_ecef[i]) / dt for i in range(3))
+        if t == 0:
+            second_difference = (
+                ecef_positions[0], ecef_positions[1], ecef_positions[2]
+            )
+        elif t == T_MAX:
+            second_difference = (
+                ecef_positions[T_MAX - 2],
+                ecef_positions[T_MAX - 1],
+                ecef_positions[T_MAX],
+            )
+        else:
+            second_difference = (left_ecef, center_ecef, right_ecef)
+        acceleration = tuple(
+            second_difference[2][i]
+            - 2 * second_difference[1][i]
+            + second_difference[0][i]
+            for i in range(3)
+        )
         speed = math.sqrt(sum(component * component for component in velocity))
         lat, lon, altitude = positions[t]
         dlat = math.radians(right[0] - left[0])
@@ -100,6 +122,7 @@ def build_trajectory() -> dict[str, Any]:
             float(t), float(t + PTS_ZERO), float(t), round(x, 3), round(y, 3), round(z, 3),
             round(lat, 6), round(lon, 6), round(altitude, 4),
             round(velocity[0], 3), round(velocity[1], 3), round(velocity[2], 3),
+            round(acceleration[0], 6), round(acceleration[1], 6), round(acceleration[2], 6),
             round(speed * 3.6, 2), round(east, 3), round(north, 3), round(up, 3),
             round(ground * 3.6, 2), round(heading, 3), round(gamma, 3), round(distance, 3),
             "synthetic_ascent" if t < 520 else "synthetic_coast_and_entry", "synthetic_demo",
@@ -122,7 +145,7 @@ def build_fixes(trajectory: dict[str, Any]) -> dict[str, Any]:
         sample = lookup[t]
         rows.append([
             index, float(t), float(t), float(t), float(t + PTS_ZERO), sample[6], sample[7],
-            round(sample[8] * 1000, 1), 1, sample[20], "synthetic_segment_01",
+            round(sample[8] * 1000, 1), 1, sample[23], "synthetic_segment_01",
             "synthetic_demo_anchor", "first" if index == 1 else "regular", None if index == 1 else float(t - times[index - 2]),
         ])
     return table(columns, rows, source_semantics="synthetic demo anchors")
@@ -145,12 +168,12 @@ def build_intervals(trajectory: dict[str, Any]) -> dict[str, Any]:
         end = min(T_MAX + 0.001, start + 10)
         mid = min(T_MAX, start + 5)
         sample = lookup[mid]
-        displacement = sample[16] / 3.6 * (end - start) / 1000
+        displacement = sample[19] / 3.6 * (end - start) / 1000
         rows.append([
             f"synthetic_interval_{index:03d}", "synthetic_segment_01", index, index + 1, float(start), float(end), float(mid),
             float(end - start), float(end - start), 0.0, sample[6], sample[7], sample[8], sample[3], sample[4], sample[5],
-            sample[9], sample[10], sample[11], sample[12], sample[16], sample[15], sample[17], sample[13], sample[14],
-            sample[9], sample[10], sample[11], sample[12], sample[16], sample[15], round(displacement, 4), round(cumulative, 4),
+            sample[9], sample[10], sample[11], sample[15], sample[19], sample[18], sample[20], sample[16], sample[17],
+            sample[9], sample[10], sample[11], sample[15], sample[19], sample[18], round(displacement, 4), round(cumulative, 4),
             round(cumulative + displacement, 4), False, "SYNTHETIC_DEMO",
         ])
         cumulative += displacement
@@ -179,7 +202,7 @@ def build_telemetry(trajectory: dict[str, Any]) -> tuple[dict[str, Any], dict[st
     telemetry_rows, object_rows = [], []
     for sample in trajectory["rows"]:
         t = int(sample[0])
-        speed, altitude = sample[12], sample[8]
+        speed, altitude = sample[15], sample[8]
         identity = "integrated_stack" if t <= 175 else "starship"
         layout = "integrated_stack_right" if t <= 175 else "starship_left"
         telemetry_rows.append([
@@ -286,7 +309,7 @@ def build_bundle() -> dict[str, Any]:
     trajectory = build_trajectory()
     telemetry, telemetry_objects = build_telemetry(trajectory)
     return {
-        "schema_version": "flight13-timeline-viewer-data-v1.4-public-demo",
+        "schema_version": "flight13-timeline-viewer-data-v1.5-public-demo",
         "distribution": {
             "profile": "public_synthetic_demo",
             "contains_flight_observations": False,

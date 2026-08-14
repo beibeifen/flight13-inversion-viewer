@@ -282,11 +282,11 @@
       </div>
     </article>
     <article class="panel embed-only">
-      <div class="panel-head"><strong>区间平均速度（地固 ENU）</strong><span id="velocity-axis-status" class="axis-status">无有效定位点区间</span></div>
+      <div class="panel-head"><strong>瞬时速度（地固 ENU）</strong><span id="velocity-axis-status" class="axis-status">瞬时轨迹尚未覆盖</span></div>
       <div class="stage">
         <div class="axis-stage">
-          <svg id="velocity-axis-svg" viewBox="0 0 360 240" role="img" aria-label="定位点区间平均速度（地固 ENU）"></svg>
-          <div id="velocity-axis-empty" class="axis-empty show">无有效 raw-fix 区间</div>
+          <svg id="velocity-axis-svg" viewBox="0 0 360 240" role="img" aria-label="条件重建轨迹瞬时速度（地固 ENU）"></svg>
+          <div id="velocity-axis-empty" class="axis-empty show">瞬时轨迹尚未覆盖</div>
           <div id="velocity-axis-values" class="axis-values"></div>
         </div>
       </div>
@@ -711,7 +711,8 @@
     const values=[enu.east_mps,enu.north_mps,enu.up_mps,ecef.x_mps,ecef.y_mps,ecef.z_mps];
     if(!values.every(finiteNumber)) return null;
     return {
-      semantics:String(payload.semantics||'raw_interval_mean'),
+      semantics:String(payload.semantics||'conditional_trajectory_instantaneous'),
+      provenance:String(payload.provenance||'reconstructed'),
       enu:[enu.east_mps,enu.north_mps,enu.up_mps],
       ecef:[ecef.x_mps,ecef.y_mps,ecef.z_mps]
     };
@@ -722,7 +723,7 @@
     const values=document.getElementById('velocity-axis-values');
     values.textContent='';
     if(!velocity){
-      clearAxisPanel('velocity-axis-svg','velocity-axis-empty','velocity-axis-status','无有效 raw-fix 区间');
+      clearAxisPanel('velocity-axis-svg','velocity-axis-empty','velocity-axis-status','瞬时轨迹尚未覆盖');
       return;
     }
     const speed=vectorNorm(velocity.enu);
@@ -734,7 +735,9 @@
     const flightPathDeg=Math.atan2(velocity.enu[2],horizontal)*180/Math.PI;
     drawEnuVelocity(velocity.enu);
     document.getElementById('velocity-axis-empty').classList.remove('show');
-    const semantics={raw_interval_mean:'端点差分 · 区间平均'}[velocity.semantics]||velocity.semantics;
+    const semantics=velocity.provenance==='gap'
+      ? '跨定位空档 · 瞬时重建'
+      : ({conditional_trajectory_instantaneous:'条件轨迹 · 瞬时速度'}[velocity.semantics]||velocity.semantics);
     document.getElementById('velocity-axis-status').textContent=semantics;
     const signed=value=>`${value>=0?'+':''}${value.toFixed(1)}`;
     values.innerHTML=`|V| ${(speed*3.6).toFixed(1)} km/h · 水平 ${(horizontal*3.6).toFixed(1)} km/h · γ ${signed(flightPathDeg)}°<br>ENU&nbsp; E ${signed(velocity.enu[0])} · N ${signed(velocity.enu[1])} · U ${signed(velocity.enu[2])} m/s<br>ECEF&nbsp; X ${signed(velocity.ecef[0])} · Y ${signed(velocity.ecef[1])} · Z ${signed(velocity.ecef[2])} m/s`;
@@ -1274,7 +1277,7 @@
   window.addEventListener('message',event=>{
     if(!embedMode||event.origin!==location.origin||event.data?.type!=='flight13-time') return;
     // A missing or invalid payload deliberately clears the velocity panel.
-    // Never preserve a vector from an earlier raw-fix interval.
+    // Never preserve a vector from an earlier trajectory time.
     currentVelocity=normalizeVelocityPayload(event.data.velocity);
     update(event.data.tplus);
   });

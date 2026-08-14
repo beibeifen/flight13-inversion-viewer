@@ -89,6 +89,9 @@ def build_trajectory(path: Path) -> dict[str, Any]:
         "ecef_vx_mps",
         "ecef_vy_mps",
         "ecef_vz_mps",
+        "ecef_ax_mps2",
+        "ecef_ay_mps2",
+        "ecef_az_mps2",
         "ecef_speed_kmh",
         "east_velocity_mps",
         "north_velocity_mps",
@@ -116,6 +119,9 @@ def build_trajectory(path: Path) -> dict[str, Any]:
                 number(row["ecef_vx_mps"], 3),
                 number(row["ecef_vy_mps"], 3),
                 number(row["ecef_vz_mps"], 3),
+                number(row["ecef_ax_mps2"], 6),
+                number(row["ecef_ay_mps2"], 6),
+                number(row["ecef_az_mps2"], 6),
                 number(row["ecef_speed_kmh"], 2),
                 number(row["east_velocity_mps"], 3),
                 number(row["north_velocity_mps"], 3),
@@ -591,7 +597,7 @@ def main() -> None:
 
     video_manifest = json.loads(paths["video_manifest"].read_text(encoding="utf-8"))
     bundle = {
-        "schema_version": "flight13-timeline-viewer-data-v1.4",
+        "schema_version": "flight13-timeline-viewer-data-v1.5",
         "interpretation": {
             "raw_tracker_is_truth": False,
             "dense_trajectory_is_observation": False,

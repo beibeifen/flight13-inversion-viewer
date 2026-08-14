@@ -3,24 +3,70 @@
       const $ = (id) => document.getElementById(id);
       const video = $("sourceVideo");
       const range = $("timeRange");
+      const massRange = $("massTimeRange");
       const timeInput = $("timeInput");
       const globe = $("globeCanvas");
       const timeline = $("timelineCanvas");
       const hudFrame = $("hudFrame");
       const absoluteMassCanvas = $("absoluteMassCanvas");
+      const ratedMassRange = $("ratedMassTimeRange");
+      const ratedMassCanvas = $("ratedMassCanvas");
       const gctx = globe.getContext("2d");
       const tctx = timeline.getContext("2d");
       const mctx = absoluteMassCanvas.getContext("2d");
+      const rmctx = ratedMassCanvas.getContext("2d");
       const DEFAULT_MASS_PARAMETERS = Object.freeze({
         initialTotal: 3300 + 311 + 1200 + 118,
         boosterWeight: (3300 + 311) / 4929,
         boosterDry: 311,
         shipDry: 118,
       });
+      const DEFAULT_RATED_PARAMETERS = Object.freeze({
+        boosterSeaLevelTf: 8240,
+        raptorSeaLevelTf: 250,
+        raptorVacuumTf: 275,
+        thrustUncertaintyFraction: 0.03,
+        raptorDiameterM: 1.3,
+        raptorVacuumDiameterM: 2.3,
+        vehicleDiameterM: 9,
+        cdUncertaintyFraction: 0.25,
+        cdSubsonic: 0.30,
+        cdTransonic: 0.60,
+        cdSupersonic: 0.35,
+        cdHypersonic: 0.30,
+      });
+      const RATED_MODEL = Object.freeze({
+        earthRotationRadS: 7.292115e-5,
+        gravitationalParameterM3S2: 3.986004418e14,
+        standardGravityMps2: 9.80665,
+        airGasConstantJkgK: 287.05287,
+        heatCapacityRatio: 1.4,
+        geopotentialEarthRadiusM: 6356766,
+        alignmentOffsetsS: Object.freeze([-1.56, 0, 1.04]),
+        primaryAlignmentOffsetS: 0,
+        minimumNonGravityAccelerationMps2: 0.05,
+        chartEndT: 500,
+        atmosphereLayers: Object.freeze([
+          Object.freeze([0, 288.15, 101325, -0.0065]),
+          Object.freeze([11000, 216.65, 22632.06, 0]),
+          Object.freeze([20000, 216.65, 5474.889, 0.001]),
+          Object.freeze([32000, 228.65, 868.0187, 0.0028]),
+          Object.freeze([47000, 270.65, 110.9063, 0]),
+          Object.freeze([51000, 270.65, 66.93887, -0.0028]),
+          Object.freeze([71000, 214.65, 3.956420, -0.002]),
+          Object.freeze([84852, 186.946, 0.3734, 0]),
+        ]),
+      });
+      const RATED_WINDOWS = Object.freeze([
+        Object.freeze({ start: 2, end: 114, vehicle: "stack", expectedCount: 33, label: "组合体 · 33 发稳定窗口" }),
+        Object.freeze({ start: 192, end: 334, vehicle: "ship", expectedCount: 6, label: "Ship · 分离后 6 发稳定窗口 I" }),
+        Object.freeze({ start: 388, end: 468, vehicle: "ship", expectedCount: 6, label: "Ship · 分离后 6 发稳定窗口 II" }),
+      ]);
       const state = {
         data: null,
-        trajectory: [], fixes: [], fixByRecord: new Map(), trackerIntervals: [], telemetry: [], objectTelemetry: [], objectTelemetryBySecond: new Map(), massSchedule: [], ring: null, absoluteMassSeries: [],
+        trajectory: [], fixes: [], fixByRecord: new Map(), trackerIntervals: [], telemetry: [], objectTelemetry: [], objectTelemetryBySecond: new Map(), massSchedule: [], ring: null, absoluteMassSeries: [], ratedMassSeries: [],
         massParameters: { ...DEFAULT_MASS_PARAMETERS },
+        ratedParameters: { ...DEFAULT_RATED_PARAMETERS },
         t: 0, draggingRange: false, videoFrameCallback: null,
         yaw: 85 * Math.PI / 180, pitch: 0, zoom: 0.88,
         rotating: false, pointerX: 0, pointerY: 0,
@@ -46,21 +92,23 @@
         if (!force && now - state.lastHudAt < HUD_SYNC_INTERVAL_MS) return;
         state.lastHudAt = now;
         const clamped = clamp(t);
-        const interval = state.data ? trackerIntervalAt(t) : null;
-        const velocity = interval ? {
+        const trajectory = state.data ? trajectoryAt(t) : null;
+        const provenance = trajectory ? trajectoryProvenanceAt(t) : null;
+        const velocity = trajectory ? {
           valid: true,
-          semantics: "raw_interval_mean",
+          semantics: "conditional_trajectory_instantaneous",
+          provenance: provenance?.kind || "reconstructed",
           enu: {
-            east_mps: interval.avg_east_mps,
-            north_mps: interval.avg_north_mps,
-            up_mps: interval.avg_climb_rate_mps,
+            east_mps: trajectory.east_velocity_mps,
+            north_mps: trajectory.north_velocity_mps,
+            up_mps: trajectory.vertical_velocity_mps,
           },
           ecef: {
-            x_mps: interval.avg_ecef_vx_mps,
-            y_mps: interval.avg_ecef_vy_mps,
-            z_mps: interval.avg_ecef_vz_mps,
+            x_mps: trajectory.ecef_vx_mps,
+            y_mps: trajectory.ecef_vy_mps,
+            z_mps: trajectory.ecef_vz_mps,
           },
-        } : { valid: false, semantics: "no_raw_interval" };
+        } : { valid: false, semantics: "no_conditional_trajectory" };
         hudFrame.contentWindow.postMessage({ type: "flight13-time", tplus: clamped, velocity }, location.origin);
       }
 
@@ -326,7 +374,7 @@
         if (Math.abs(t - b.tplus_s) < 1e-9) return { ...b, render_interpolated: false };
         const f = (t - a.tplus_s) / (b.tplus_s - a.tplus_s);
         const out = { tplus_s: t, render_interpolated: true };
-        const numeric = ["file_pts_s", "tracker_source_met_s", "ecef_x_m", "ecef_y_m", "ecef_z_m", "latitude_deg", "longitude_deg", "ellipsoid_altitude_km", "ecef_vx_mps", "ecef_vy_mps", "ecef_vz_mps", "ecef_speed_kmh", "east_velocity_mps", "north_velocity_mps", "vertical_velocity_mps", "ground_speed_kmh", "heading_deg", "flight_path_angle_deg", "distance_from_pad_km"];
+        const numeric = ["file_pts_s", "tracker_source_met_s", "ecef_x_m", "ecef_y_m", "ecef_z_m", "latitude_deg", "longitude_deg", "ellipsoid_altitude_km", "ecef_vx_mps", "ecef_vy_mps", "ecef_vz_mps", "ecef_ax_mps2", "ecef_ay_mps2", "ecef_az_mps2", "ecef_speed_kmh", "east_velocity_mps", "north_velocity_mps", "vertical_velocity_mps", "ground_speed_kmh", "heading_deg", "flight_path_angle_deg", "distance_from_pad_km"];
         numeric.forEach((key) => { out[key] = finite(a[key]) && finite(b[key]) ? a[key] + (b[key] - a[key]) * f : null; });
         const categorical = f < 0.5 ? a : b;
         out.phase_label = categorical.phase_label;
@@ -442,6 +490,277 @@
 
       function massBurnPhaseAt(stage, t) {
         return MASS_BURN_PHASES.find((phase) => phase.stage === stage && t >= phase.start && t <= phase.end) || null;
+      }
+
+      function vectorAdd(...vectors) {
+        return vectors[0].map((_value, index) => vectors.reduce((sum, vector) => sum + vector[index], 0));
+      }
+
+      function vectorScale(vector, scalar) { return vector.map((value) => value * scalar); }
+
+      function vectorCross(a, b) {
+        return [
+          a[1] * b[2] - a[2] * b[1],
+          a[2] * b[0] - a[0] * b[2],
+          a[0] * b[1] - a[1] * b[0],
+        ];
+      }
+
+      function vectorMagnitude(vector) { return Math.hypot(...vector); }
+
+      function vectorDot(a, b) { return a.reduce((sum, value, index) => sum + value * b[index], 0); }
+
+      function ratedWindowAt(t) {
+        return RATED_WINDOWS.find((window) => t >= window.start && t <= window.end) || null;
+      }
+
+      function ratedParametersFromInputs() {
+        const raw = {
+          boosterSeaLevelTf: Number($("ratedBoosterSeaLevelTf").value),
+          raptorSeaLevelTf: Number($("ratedRaptorSeaLevelTf").value),
+          raptorVacuumTf: Number($("ratedRaptorVacuumTf").value),
+          thrustUncertaintyFraction: Number($("ratedThrustUncertainty").value) / 100,
+          raptorDiameterM: Number($("ratedRaptorDiameter").value),
+          raptorVacuumDiameterM: Number($("ratedRaptorVacuumDiameter").value),
+          vehicleDiameterM: Number($("ratedVehicleDiameter").value),
+          cdUncertaintyFraction: Number($("ratedCdUncertainty").value) / 100,
+          cdSubsonic: Number($("ratedCdSubsonic").value),
+          cdTransonic: Number($("ratedCdTransonic").value),
+          cdSupersonic: Number($("ratedCdSupersonic").value),
+          cdHypersonic: Number($("ratedCdHypersonic").value),
+        };
+        if (!Object.values(raw).every(finite)) return null;
+        return {
+          boosterSeaLevelTf: Math.max(1, raw.boosterSeaLevelTf),
+          raptorSeaLevelTf: Math.max(1, raw.raptorSeaLevelTf),
+          raptorVacuumTf: Math.max(1, raw.raptorVacuumTf),
+          thrustUncertaintyFraction: clamp(raw.thrustUncertaintyFraction, 0, 0.5),
+          raptorDiameterM: Math.max(0.1, raw.raptorDiameterM),
+          raptorVacuumDiameterM: Math.max(0.1, raw.raptorVacuumDiameterM),
+          vehicleDiameterM: Math.max(0.1, raw.vehicleDiameterM),
+          cdUncertaintyFraction: clamp(raw.cdUncertaintyFraction, 0, 1),
+          cdSubsonic: clamp(raw.cdSubsonic, 0, 3),
+          cdTransonic: clamp(raw.cdTransonic, 0, 3),
+          cdSupersonic: clamp(raw.cdSupersonic, 0, 3),
+          cdHypersonic: clamp(raw.cdHypersonic, 0, 3),
+        };
+      }
+
+      function writeRatedParameterInputs(parameters) {
+        $("ratedBoosterSeaLevelTf").value = String(parameters.boosterSeaLevelTf);
+        $("ratedRaptorSeaLevelTf").value = String(parameters.raptorSeaLevelTf);
+        $("ratedRaptorVacuumTf").value = String(parameters.raptorVacuumTf);
+        $("ratedThrustUncertainty").value = String(100 * parameters.thrustUncertaintyFraction);
+        $("ratedRaptorDiameter").value = String(parameters.raptorDiameterM);
+        $("ratedRaptorVacuumDiameter").value = String(parameters.raptorVacuumDiameterM);
+        $("ratedVehicleDiameter").value = String(parameters.vehicleDiameterM);
+        $("ratedCdUncertainty").value = String(100 * parameters.cdUncertaintyFraction);
+        $("ratedCdSubsonic").value = parameters.cdSubsonic.toFixed(2);
+        $("ratedCdTransonic").value = parameters.cdTransonic.toFixed(2);
+        $("ratedCdSupersonic").value = parameters.cdSupersonic.toFixed(2);
+        $("ratedCdHypersonic").value = parameters.cdHypersonic.toFixed(2);
+      }
+
+      function applyRatedParametersFromInputs(normalizeInputs = false) {
+        const parameters = ratedParametersFromInputs();
+        if (!parameters) {
+          if (normalizeInputs) writeRatedParameterInputs(state.ratedParameters);
+          return;
+        }
+        state.ratedParameters = parameters;
+        if (normalizeInputs) writeRatedParameterInputs(parameters);
+        if (!state.data || !state.ring) return;
+        buildRatedMassSeries();
+        updateRatedInversion(state.t);
+      }
+
+      function standardAtmosphere1976At(geometricAltitudeM) {
+        const g0 = RATED_MODEL.standardGravityMps2;
+        const gasR = RATED_MODEL.airGasConstantJkgK;
+        const re = RATED_MODEL.geopotentialEarthRadiusM;
+        const geometric = Math.max(0, geometricAltitudeM);
+        const geopotential = re * geometric / (re + geometric);
+        const layers = RATED_MODEL.atmosphereLayers;
+        let layer = layers[layers.length - 1];
+        for (let index = 0; index < layers.length - 1; index += 1) {
+          if (geopotential < layers[index + 1][0]) { layer = layers[index]; break; }
+        }
+        const [baseH, baseT, baseP, lapse] = layer;
+        const deltaH = geopotential - baseH;
+        let temperature;
+        let pressure;
+        if (Math.abs(lapse) < 1e-12) {
+          temperature = baseT;
+          pressure = baseP * Math.exp(-g0 * deltaH / (gasR * baseT));
+        } else {
+          temperature = baseT + lapse * deltaH;
+          pressure = baseP * (baseT / temperature) ** (g0 / (gasR * lapse));
+        }
+        const density = pressure / (gasR * temperature);
+        const speedOfSound = Math.sqrt(RATED_MODEL.heatCapacityRatio * gasR * temperature);
+        return { geometricAltitudeM: geometric, geopotentialAltitudeM: geopotential, temperatureK: temperature, pressurePa: pressure, densityKgM3: density, speedOfSoundMps: speedOfSound, extrapolated: geopotential > 84852 };
+      }
+
+      function ratedCdAt(mach, parameters) {
+        const nodes = [
+          [0, parameters.cdSubsonic],
+          [0.8, parameters.cdSubsonic],
+          [1.05, parameters.cdTransonic],
+          [1.5, parameters.cdSupersonic],
+          [5, parameters.cdHypersonic],
+        ];
+        const value = Math.max(0, mach);
+        for (let index = 1; index < nodes.length; index += 1) {
+          if (value > nodes[index][0]) continue;
+          const [m0, cd0] = nodes[index - 1], [m1, cd1] = nodes[index];
+          return cd0 + (cd1 - cd0) * (value - m0) / (m1 - m0);
+        }
+        return parameters.cdHypersonic;
+      }
+
+      function ratedEngineGateAt(t, window) {
+        const ring = ringAt(t);
+        if (window.vehicle === "stack") {
+          const valid = ring.leftMode === "booster_engine_array" && ring.boosterCount === window.expectedCount;
+          return valid ? { valid: true, count: ring.boosterCount, composition: "33 台普通 Raptor（整级官网推力口径）" } : { valid: false, reason: "助推器发动机阵列模式或 33 发数量不可信" };
+        }
+        const valid = ring.rightMode === "ship_engine_array" && ring.shipCount === window.expectedCount;
+        return valid ? { valid: true, count: ring.shipCount, composition: "3 台普通 Raptor + 3 台 Raptor Vacuum" } : { valid: false, reason: "Ship 发动机阵列模式或 6 发数量不可信" };
+      }
+
+      function ratedThrustAt(window, atmosphere, parameters, scale = 1) {
+        const p0 = RATED_MODEL.atmosphereLayers[0][2];
+        const tfN = RATED_MODEL.standardGravityMps2 * 1000;
+        const raptorArea = Math.PI * parameters.raptorDiameterM ** 2 / 4;
+        const vacuumArea = Math.PI * parameters.raptorVacuumDiameterM ** 2 / 4;
+        if (window.vehicle === "stack") {
+          const seaLevelN = parameters.boosterSeaLevelTf * tfN;
+          return scale * (seaLevelN + 33 * (p0 - atmosphere.pressurePa) * raptorArea);
+        }
+        const raptorN = parameters.raptorSeaLevelTf * tfN + (p0 - atmosphere.pressurePa) * raptorArea;
+        const vacuumN = parameters.raptorVacuumTf * tfN - atmosphere.pressurePa * vacuumArea;
+        return scale * 3 * (raptorN + vacuumN);
+      }
+
+      function ratedTrajectoryDynamicsAt(t, alignmentOffsetS, window) {
+        const centerT = t + alignmentOffsetS;
+        if (t < window.start || t > window.end) return null;
+        const trajectory = trajectoryAt(centerT);
+        if (!trajectory) return null;
+        const position = [trajectory.ecef_x_m, trajectory.ecef_y_m, trajectory.ecef_z_m];
+        const velocity = [trajectory.ecef_vx_mps, trajectory.ecef_vy_mps, trajectory.ecef_vz_mps];
+        const accelerationEcef = [trajectory.ecef_ax_mps2, trajectory.ecef_ay_mps2, trajectory.ecef_az_mps2];
+        if (![...position, ...velocity, ...accelerationEcef].every(finite)) return null;
+        const omega = [0, 0, RATED_MODEL.earthRotationRadS];
+        const accelerationInertial = vectorAdd(accelerationEcef, vectorScale(vectorCross(omega, velocity), 2), vectorCross(omega, vectorCross(omega, position)));
+        const radius = vectorMagnitude(position);
+        const gravity = vectorScale(position, -RATED_MODEL.gravitationalParameterM3S2 / radius ** 3);
+        const nonGravityAcceleration = vectorAdd(accelerationInertial, vectorScale(gravity, -1));
+        return { trajectory, position, velocity, accelerationEcef, accelerationInertial, gravity, nonGravityAcceleration };
+      }
+
+      function ratedMassInversionAt(t, options = {}) {
+        const parameters = options.parameters || state.ratedParameters;
+        const window = ratedWindowAt(t);
+        if (!window) return { valid: false, reason: "严格可计算窗口之外" };
+        const gate = ratedEngineGateAt(t, window);
+        if (!gate.valid) return { valid: false, reason: gate.reason, window };
+        const alignmentOffsetS = options.alignmentOffsetS ?? RATED_MODEL.primaryAlignmentOffsetS;
+        const dynamics = ratedTrajectoryDynamicsAt(t, alignmentOffsetS, window);
+        if (!dynamics) return { valid: false, reason: "轨迹或二阶导数不可用", window };
+        const airSpeed = vectorMagnitude(dynamics.velocity);
+        if (!(airSpeed > 0)) return { valid: false, reason: "空速近似为零", window };
+        const atmosphere = standardAtmosphere1976At(dynamics.trajectory.ellipsoid_altitude_km * 1000);
+        const mach = airSpeed / atmosphere.speedOfSoundMps;
+        const cd = ratedCdAt(mach, parameters) * (options.cdScale ?? 1);
+        const referenceAreaM2 = Math.PI * parameters.vehicleDiameterM ** 2 / 4;
+        const dragN = 0.5 * atmosphere.densityKgM3 * cd * referenceAreaM2 * airSpeed ** 2;
+        const thrustN = ratedThrustAt(window, atmosphere, parameters, options.thrustScale ?? 1);
+        const velocityDirection = vectorScale(dynamics.velocity, 1 / airSpeed);
+        const acceleration = dynamics.nonGravityAcceleration;
+        const accelerationMagnitude = vectorMagnitude(acceleration);
+        if (accelerationMagnitude < RATED_MODEL.minimumNonGravityAccelerationMps2) return { valid: false, reason: "扣除重力后的加速度接近零", window };
+        if (!(thrustN > dragN)) return { valid: false, reason: "阻力不低于额定推力", window };
+        const aa = vectorDot(acceleration, acceleration);
+        const bb = 2 * dragN * vectorDot(acceleration, velocityDirection);
+        const cc = dragN ** 2 - thrustN ** 2;
+        const discriminant = bb ** 2 - 4 * aa * cc;
+        if (!(discriminant >= 0) || !finite(discriminant)) return { valid: false, reason: "质量方程无实根", window };
+        const massKg = (-bb + Math.sqrt(discriminant)) / (2 * aa);
+        if (!(massKg > 0) || !finite(massKg)) return { valid: false, reason: "质量方程无正根", window };
+        const thrustVector = vectorAdd(vectorScale(acceleration, massKg), vectorScale(velocityDirection, dragN));
+        const reconstructedThrustN = vectorMagnitude(thrustVector);
+        if (!(reconstructedThrustN > 0)) return { valid: false, reason: "推力方向不可恢复", window };
+        const thrustDirection = vectorScale(thrustVector, 1 / reconstructedThrustN);
+        const directionAngleDeg = Math.acos(clamp(vectorDot(thrustDirection, velocityDirection), -1, 1)) * 180 / Math.PI;
+        return {
+          valid: true, t, window, gate, alignmentOffsetS, dynamics, atmosphere,
+          massTonnes: massKg / 1000, thrustMN: thrustN / 1e6, reconstructedThrustMN: reconstructedThrustN / 1e6,
+          dragMN: dragN / 1e6, airSpeedMps: airSpeed, mach, cd, referenceAreaM2,
+          nonGravityAccelerationMps2: accelerationMagnitude, directionAngleDeg, thrustDirection,
+        };
+      }
+
+      function ratedSensitivityAt(t) {
+        const primary = ratedMassInversionAt(t);
+        if (!primary.valid) return primary;
+        const p = state.ratedParameters;
+        const cdScales = [1 - p.cdUncertaintyFraction, 1, 1 + p.cdUncertaintyFraction];
+        const thrustScales = [1 - p.thrustUncertaintyFraction, 1, 1 + p.thrustUncertaintyFraction];
+        const candidates = [];
+        for (const alignmentOffsetS of RATED_MODEL.alignmentOffsetsS) {
+          for (const cdScale of cdScales) {
+            for (const thrustScale of thrustScales) {
+              const result = ratedMassInversionAt(t, { alignmentOffsetS, cdScale, thrustScale });
+              if (result.valid) candidates.push(result);
+            }
+          }
+        }
+        if (!candidates.length) return { valid: false, reason: "敏感性候选全部不可用", window: primary.window };
+        const masses = candidates.map((item) => item.massTonnes);
+        const angles = candidates.map((item) => item.directionAngleDeg);
+        return {
+          ...primary,
+          massLowTonnes: Math.min(...masses), massHighTonnes: Math.max(...masses),
+          angleLowDeg: Math.min(...angles), angleHighDeg: Math.max(...angles),
+          candidateCount: candidates.length,
+        };
+      }
+
+      function buildRatedMassSeries() {
+        const rows = [];
+        for (const window of RATED_WINDOWS) {
+          for (let t = window.start; t <= window.end; t += 1) {
+            const result = ratedSensitivityAt(t);
+            if (result.valid) rows.push(result);
+          }
+        }
+        state.ratedMassSeries = rows;
+        updateRatedSummaryCards();
+      }
+
+      function updateRatedSummaryCards() {
+        const snapshots = [[60, "ratedSnapshot60Mass", "ratedSnapshot60Range"], [250, "ratedSnapshot250Mass", "ratedSnapshot250Range"], [420, "ratedSnapshot420Mass", "ratedSnapshot420Range"]];
+        snapshots.forEach(([t, massId, rangeId]) => {
+          const result = ratedSensitivityAt(t);
+          setText(massId, result.valid ? `${result.massTonnes.toFixed(0)} t` : "—", result.valid ? "estimated" : "missing");
+          setText(rangeId, result.valid ? `${result.massLowTonnes.toFixed(0)}–${result.massHighTonnes.toFixed(0)} t` : "—");
+        });
+        const consumptionPairs = [
+          [20, 114, "ratedBoosterConsumed", "ratedBoosterConsumedRange"],
+          [192, 468, "ratedShipConsumed", "ratedShipConsumedRange"],
+        ];
+        consumptionPairs.forEach(([startT, endT, valueId, rangeId]) => {
+          const start = ratedSensitivityAt(startT), end = ratedSensitivityAt(endT);
+          if (!start.valid || !end.valid) {
+            setText(valueId, "—", "missing"); setText(rangeId, "—"); return;
+          }
+          const consumed = start.massTonnes - end.massTonnes;
+          const low = start.massLowTonnes - end.massHighTonnes;
+          const high = start.massHighTonnes - end.massLowTonnes;
+          setText(valueId, `${consumed.toFixed(0)} t`, "estimated");
+          setText(rangeId, `${Math.max(0, low).toFixed(0)}–${Math.max(0, high).toFixed(0)} t`);
+        });
       }
 
       function buildAbsoluteMassSeries() {
@@ -575,6 +894,83 @@
         setText("absoluteCombinedMass", combinedMass ? formatMassValue(combinedMass) : "已分离，不再相加", combinedMass ? "derived" : "missing");
         drawAbsoluteMass();
       }
+
+      function ratedUnavailableReason(t) {
+        if (t < 2) return "拟合轨迹从 T+2 开始";
+        if (t <= 191) return "定位缺口 / 热分离 / 分离事件：必须留空";
+        if (t <= 387) return "原始 StarDash 定位硬缺口：求导不得跨越";
+        if (t <= 468) return "发动机图标或轨迹门控未通过";
+        if (t <= 500) return "Ship 主发动机关机边缘：不在稳定推力窗口";
+        if (t <= STACK_SEPARATION_T) return "热分离窗口：不拆分两级质量";
+        if (t <= BOOSTER_TRACK_END_T) return "分离后 Booster 无独立三维轨迹";
+        return "滑行、短时再点火、再入和着陆均不反演";
+      }
+
+      function updateRatedInversion(t) {
+        const result = ratedSensitivityAt(t);
+        if (!result.valid) {
+          setText("ratedWindowStatus", `T+${t.toFixed(1)} / —`, "missing");
+          ["ratedEngineCountValue", "ratedThrustValue", "ratedSpeedValue", "ratedAltitudeValue", "ratedDynamicsValue", "ratedAeroValue", "ratedMassValue", "ratedMassInterval", "ratedDirectionValue", "ratedQualityValue"].forEach((id) => setText(id, "—", "missing"));
+          drawRatedCharts();
+          return;
+        }
+        const vehicleLabel = result.window.vehicle === "stack" ? "组合体" : "Ship";
+        setText("ratedWindowStatus", `T+${t.toFixed(1)} / ${vehicleLabel}`, "estimated");
+        setText("ratedEngineCountValue", String(result.gate.count), "estimated");
+        setText("ratedThrustValue", `${result.thrustMN.toFixed(2)} MN`, "estimated");
+        setText("ratedSpeedValue", `${(result.airSpeedMps / 1000).toFixed(3)} km/s`, "estimated");
+        setText("ratedAltitudeValue", `${result.dynamics.trajectory.ellipsoid_altitude_km.toFixed(3)} km`, "estimated");
+        setText("ratedDynamicsValue", `${result.nonGravityAccelerationMps2.toFixed(3)} m/s²`, "estimated");
+        setText("ratedAeroValue", `${result.mach.toFixed(2)} / ${result.cd.toFixed(3)} / ${result.dragMN.toFixed(3)} MN`, "estimated");
+        setText("ratedMassValue", `${result.massTonnes.toFixed(1)} t`, "estimated");
+        setText("ratedMassInterval", `${result.massLowTonnes.toFixed(1)}–${result.massHighTonnes.toFixed(1)} t`, "estimated");
+        setText("ratedDirectionValue", `${result.directionAngleDeg.toFixed(2)}° / ${result.angleLowDeg.toFixed(2)}–${result.angleHighDeg.toFixed(2)}°`, "estimated");
+        setText("ratedQualityValue", String(result.candidateCount), "estimated");
+        drawRatedCharts();
+      }
+
+      function ratedChartWindows() {
+        return RATED_WINDOWS.map((window) => ({ window, rows: state.ratedMassSeries.filter((row) => row.window === window) }));
+      }
+
+      function drawRatedMassChart() {
+        const { width, height } = fitCanvas(ratedMassCanvas, rmctx);
+        rmctx.clearRect(0, 0, width, height);
+        const left = 62, right = 12, top = 12, bottom = 30;
+        const plotW = Math.max(1, width - left - right), plotH = Math.max(1, height - top - bottom);
+        const maxMass = Math.max(1, ...state.ratedMassSeries.map((row) => row.massHighTonnes));
+        const yMax = Math.ceil(maxMass / 500) * 500;
+        const x = (t) => left + t / RATED_MODEL.chartEndT * plotW;
+        const y = (mass) => top + (1 - mass / yMax) * plotH;
+        rmctx.strokeStyle = css("--border"); rmctx.lineWidth = 1;
+        for (let index = 0; index <= 4; index += 1) {
+          const mass = yMax * index / 4;
+          rmctx.beginPath(); rmctx.moveTo(left, y(mass)); rmctx.lineTo(left + plotW, y(mass)); rmctx.stroke();
+        }
+        for (const { rows } of ratedChartWindows()) {
+          if (!rows.length) continue;
+          rmctx.fillStyle = "rgba(204, 145, 48, 0.22)";
+          rmctx.beginPath();
+          rows.forEach((row, index) => { const px = x(row.t), py = y(row.massHighTonnes); if (!index) rmctx.moveTo(px, py); else rmctx.lineTo(px, py); });
+          [...rows].reverse().forEach((row) => rmctx.lineTo(x(row.t), y(row.massLowTonnes)));
+          rmctx.closePath(); rmctx.fill();
+          rmctx.strokeStyle = css("--estimated"); rmctx.lineWidth = 1.8; rmctx.beginPath();
+          rows.forEach((row, index) => { const px = x(row.t), py = y(row.massTonnes); if (!index) rmctx.moveTo(px, py); else rmctx.lineTo(px, py); });
+          rmctx.stroke();
+        }
+        if (state.t >= 0 && state.t <= RATED_MODEL.chartEndT) {
+          rmctx.strokeStyle = css("--accent"); rmctx.lineWidth = 1.2; rmctx.beginPath(); rmctx.moveTo(x(state.t), top); rmctx.lineTo(x(state.t), top + plotH); rmctx.stroke();
+        }
+        rmctx.font = '12px "Segoe UI", sans-serif'; rmctx.fillStyle = css("--muted");
+        for (let index = 0; index <= 4; index += 1) {
+          const mass = yMax * index / 4, label = `${Math.round(mass)} t`;
+          rmctx.fillText(label, Math.max(2, left - rmctx.measureText(label).width - 6), y(mass) + 4);
+        }
+        [0, 100, 200, 300, 400, 500].forEach((t) => { const label = `T+${t}`; rmctx.fillText(label, Math.max(left, Math.min(width - rmctx.measureText(label).width, x(t) - rmctx.measureText(label).width / 2)), height - 9); });
+      }
+
+      function drawRatedCharts() { drawRatedMassChart(); }
+
       function setText(id, text, className) {
         const node = $(id);
         node.textContent = text;
@@ -945,11 +1341,13 @@
       function syncAll(t, force = false, announce = false) {
         state.t = t;
         const clamped = clamp(t);
-        if (!state.draggingRange) range.value = String(clamped);
+        if (state.draggingRange !== "timeRange") range.value = String(clamped);
+        if (state.draggingRange !== "massTimeRange") massRange.value = String(clamped);
+        if (state.draggingRange !== "ratedMassTimeRange") ratedMassRange.value = String(Math.min(clamped, RATED_MODEL.chartEndT));
         timeInput.value = clamped.toFixed(3);
         const now = performance.now();
         if (force || now - state.lastUiAt > 70) {
-          state.lastUiAt = now; updatePanels(t, announce); drawGlobe(); drawTimeline();
+          state.lastUiAt = now; updatePanels(t, announce); updateRatedInversion(t); drawGlobe(); drawTimeline();
         }
         syncHud(clamped, force);
       }
@@ -1011,18 +1409,44 @@
           writeMassParameterInputs(DEFAULT_MASS_PARAMETERS);
           applyMassParametersFromInputs(true);
         });
+        for (const id of ["ratedBoosterSeaLevelTf", "ratedRaptorSeaLevelTf", "ratedRaptorVacuumTf", "ratedThrustUncertainty", "ratedRaptorDiameter", "ratedRaptorVacuumDiameter", "ratedVehicleDiameter", "ratedCdUncertainty", "ratedCdSubsonic", "ratedCdTransonic", "ratedCdSupersonic", "ratedCdHypersonic"]) {
+          $(id).addEventListener("input", () => applyRatedParametersFromInputs(false));
+          $(id).addEventListener("change", () => applyRatedParametersFromInputs(true));
+          $(id).addEventListener("blur", () => applyRatedParametersFromInputs(true));
+        }
+        $("resetRatedParameters").addEventListener("click", () => {
+          writeRatedParameterInputs(DEFAULT_RATED_PARAMETERS);
+          applyRatedParametersFromInputs(true);
+        });
         timeInput.addEventListener("change", () => { video.pause(); seekTplus(timeInput.value); });
         timeInput.addEventListener("keydown", (event) => {
           if (event.key !== "Enter") return;
           event.preventDefault(); video.pause(); seekTplus(timeInput.value);
         });
-        range.addEventListener("pointerdown", () => { state.draggingRange = true; });
-        range.addEventListener("input", () => {
-          const target = Number(range.value); syncAll(target, true, false);
-          requestAnimationFrame(() => { video.currentTime = target + state.data.time.video_tplus_zero_pts_s; });
+        function bindTimeRange(input) {
+          input.addEventListener("pointerdown", () => { state.draggingRange = input.id; });
+          input.addEventListener("input", () => {
+            const target = Number(input.value); syncAll(target, true, false);
+            requestAnimationFrame(() => { video.currentTime = target + state.data.time.video_tplus_zero_pts_s; });
+          });
+          const finish = () => {
+            if (state.draggingRange !== input.id) return;
+            state.draggingRange = false;
+            seekTplus(input.value, true);
+          };
+          input.addEventListener("change", finish);
+          input.addEventListener("pointerup", finish);
+          input.addEventListener("pointercancel", finish);
+        }
+        bindTimeRange(range);
+        bindTimeRange(massRange);
+        bindTimeRange(ratedMassRange);
+        document.querySelectorAll("[data-rated-seek]").forEach((button) => {
+          button.addEventListener("click", () => {
+            video.pause();
+            seekTplus(Number(button.dataset.ratedSeek));
+          });
         });
-        const finishRange = () => { if (!state.draggingRange) return; state.draggingRange = false; seekTplus(range.value, true); };
-        range.addEventListener("change", finishRange); range.addEventListener("pointerup", finishRange); range.addEventListener("pointercancel", finishRange);
         $("prevFix").addEventListener("click", () => { const pair = neighbors(state.fixes, state.t - 0.001, "aligned_tplus_s"); if (pair.previous) seekTplus(pair.previous.aligned_tplus_s); });
         $("nextFix").addEventListener("click", () => { const pair = neighbors(state.fixes, state.t + 0.001, "aligned_tplus_s"); if (pair.next && pair.next.aligned_tplus_s <= T_MAX) seekTplus(pair.next.aligned_tplus_s); });
         $("showEstimate").addEventListener("change", () => { updatePanels(state.t); drawGlobe(); if ($("showEstimate").checked) $("estimateDetails").open = true; });
@@ -1060,7 +1484,7 @@
           }
         });
         globe.addEventListener("wheel", (event) => { event.preventDefault(); state.zoom = Math.max(0.65, Math.min(1.22, state.zoom * (event.deltaY > 0 ? 0.94 : 1.06))); drawGlobe(); }, { passive: false });
-        new ResizeObserver(() => { drawGlobe(); drawTimeline(); drawAbsoluteMass(); }).observe(document.querySelector(".app"));
+        new ResizeObserver(() => { drawGlobe(); drawTimeline(); drawAbsoluteMass(); drawRatedCharts(); }).observe(document.querySelector(".app"));
       }
 
       async function init() {
@@ -1078,14 +1502,18 @@
           state.massSchedule = rowsToObjects(state.data.mass_schedule);
           state.ring = decodeRing(state.data.ring);
           writeMassParameterInputs(state.massParameters);
+          writeRatedParameterInputs(state.ratedParameters);
           updateMassComposition();
           buildAbsoluteMassSeries();
+          buildRatedMassSeries();
           prepareTimeline(); bindInteractions();
           video.src = state.data.video.route;
           $("loadStatus").textContent = "就绪";
           const requested = Number(new URLSearchParams(location.search).get("t"));
           const initialT = Number.isFinite(requested) ? clamp(requested) : 0;
           syncAll(initialT, true, true);
+          ratedMassRange.value = String(Math.min(state.t, RATED_MODEL.chartEndT));
+          updateRatedInversion(state.t);
         } catch (error) {
           $("loadStatus").textContent = error.message;
           $("loadStatus").className = "loading missing";
